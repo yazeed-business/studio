@@ -1,1 +1,6 @@
-// Flows will be imported for their side effects in this file.
+import { config } from 'dotenv';
+config();
+
+import '@/ai/flows/question-generation.ts';
+import '@/ai/flows/code-grading.ts';
+import '@/ai/flows/topic-generation.ts';
