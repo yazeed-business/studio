@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { FC } from 'react';
@@ -8,14 +9,12 @@ import { Lightbulb, HelpCircle } from "lucide-react";
 interface ChallengeDisplayProps {
   topic: string | null;
   question: string | null;
-  isLoadingTopic: boolean;
   isLoadingQuestion: boolean;
 }
 
 export const ChallengeDisplay: FC<ChallengeDisplayProps> = ({
   topic,
   question,
-  isLoadingTopic,
   isLoadingQuestion,
 }) => {
   return (
@@ -30,12 +29,10 @@ export const ChallengeDisplay: FC<ChallengeDisplayProps> = ({
           <h3 className="text-lg font-semibold mb-2 flex items-center">
              <HelpCircle className="mr-2 h-5 w-5 text-accent" /> Topic:
           </h3>
-          {isLoadingTopic ? (
-            <Skeleton className="h-6 w-3/4" />
-          ) : topic ? (
+          {topic ? (
             <CardDescription className="text-base">{topic}</CardDescription>
           ) : (
-            <CardDescription className="text-base text-muted-foreground">Select a difficulty to generate a topic.</CardDescription>
+            <CardDescription className="text-base text-muted-foreground">Select a difficulty and topic to generate a challenge.</CardDescription>
           )}
         </div>
         <div>
@@ -49,8 +46,10 @@ export const ChallengeDisplay: FC<ChallengeDisplayProps> = ({
             </div>
           ) : question ? (
             <CardDescription className="text-base whitespace-pre-wrap">{question}</CardDescription>
+          ) : topic && topic.trim() ? ( 
+             <CardDescription className="text-base text-muted-foreground">Generating question for "{topic}"... (Select difficulty if not done)</CardDescription>
           ) : (
-            <CardDescription className="text-base text-muted-foreground">Topic must be generated first.</CardDescription>
+            <CardDescription className="text-base text-muted-foreground">Select a topic and difficulty level first.</CardDescription>
           )}
         </div>
       </CardContent>

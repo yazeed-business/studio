@@ -1,14 +1,15 @@
+
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { AppHeader } from "@/components/layout/app-header";
 import { AppFooter } from "@/components/layout/app-footer";
 import { DifficultySelector } from "@/components/code-crafter/difficulty-selector";
+import { TopicSelector } from "@/components/code-crafter/topic-selector";
 import { ChallengeDisplay } from "@/components/code-crafter/challenge-display";
 import { CodeEditorPanel } from "@/components/code-crafter/code-editor-panel";
 import { GradingResults } from "@/components/code-crafter/grading-results";
 import { useToast } from "@/hooks/use-toast";
-import { generateTopic, type TopicGenerationInput, type TopicGenerationOutput } from "@/ai/flows/topic-generation";
 import { generateQuestion, type QuestionGenerationInput, type QuestionGenerationOutput } from "@/ai/flows/question-generation";
 import { gradeCode, type GradeCodeInput, type GradeCodeOutput } from "@/ai/flows/code-grading";
 import { AlertCircle } from "lucide-react";
@@ -18,59 +19,72 @@ type Difficulty = "Beginner" | "Intermediate" | "Advanced";
 
 export default function CodeCrafterPage() {
   const [difficulty, setDifficulty] = useState<Difficulty | null>(null);
-  const [topic, setTopic] = useState<string | null>(null);
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [question, setQuestion] = useState<string | null>(null);
   const [code, setCode] = useState<string>("");
   const [gradingResult, setGradingResult] = useState<GradeCodeOutput | null>(null);
 
-  const [isLoadingTopic, setIsLoadingTopic] = useState<boolean>(false);
   const [isLoadingQuestion, setIsLoadingQuestion] = useState<boolean>(false);
   const [isSubmittingCode, setIsSubmittingCode] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const { toast } = useToast();
 
-  const resetChallengeState = () => {
-    setTopic(null);
+  const resetQuestionAndRelatedState = useCallback(() => {
     setQuestion(null);
     setCode("");
     setGradingResult(null);
     setError(null);
-  };
+  }, []);
 
-  const handleDifficultyChange = useCallback(async (newDifficulty: Difficulty) => {
-    setDifficulty(newDifficulty);
-    resetChallengeState();
-    setIsLoadingTopic(true);
+  const fetchQuestionForChallenge = useCallback(async (currentTopic: string, currentDifficulty: Difficulty) => {
+    if (!currentTopic?.trim() || !currentDifficulty) {
+      // If topic is empty or only whitespace, don't fetch.
+      setQuestion(null); // Clear any existing question
+      return;
+    }
+
+    setIsLoadingQuestion(true);
+    setError(null); 
+    setQuestion(null); 
+    setCode(""); 
+    setGradingResult(null); 
 
     try {
-      const topicInput: TopicGenerationInput = { difficulty: newDifficulty };
-      const topicOutput: TopicGenerationOutput = await generateTopic(topicInput);
-      setTopic(topicOutput.topic);
-      setIsLoadingTopic(false);
-      
-      setIsLoadingQuestion(true);
-      try {
-        const questionInput: QuestionGenerationInput = { topic: topicOutput.topic, difficulty: newDifficulty };
-        const questionOutput: QuestionGenerationOutput = await generateQuestion(questionInput);
-        setQuestion(questionOutput.question);
-      } catch (questionError) {
-        console.error("Error generating question:", questionError);
-        setError("Failed to generate question. Please try again.");
-        toast({ variant: "destructive", title: "Error", description: "Failed to generate question." });
-      } finally {
-        setIsLoadingQuestion(false);
-      }
-    } catch (topicError) {
-      console.error("Error generating topic:", topicError);
-      setError("Failed to generate topic. Please try again.");
-      toast({ variant: "destructive", title: "Error", description: "Failed to generate topic." });
-      setIsLoadingTopic(false);
+      const questionInput: QuestionGenerationInput = { topic: currentTopic, difficulty: currentDifficulty };
+      const questionOutput: QuestionGenerationOutput = await generateQuestion(questionInput);
+      setQuestion(questionOutput.question);
+      toast({ title: "New Challenge Ready!", description: `Question for ${currentTopic} (${currentDifficulty}) generated.`});
+    } catch (questionError) {
+      console.error("Error generating question:", questionError);
+      setError(`Failed to generate question for "${currentTopic}". Please try a different topic/difficulty or try again.`);
+      toast({ variant: "destructive", title: "Question Generation Error", description: `Could not generate a question for "${currentTopic}".` });
+    } finally {
+      setIsLoadingQuestion(false);
     }
   }, [toast]);
 
+  const handleDifficultyChange = useCallback((newDifficulty: Difficulty) => {
+    setDifficulty(newDifficulty);
+    resetQuestionAndRelatedState();
+    if (selectedTopic && newDifficulty) {
+      fetchQuestionForChallenge(selectedTopic, newDifficulty);
+    }
+  }, [selectedTopic, fetchQuestionForChallenge, resetQuestionAndRelatedState]);
+
+  const handleTopicChange = useCallback((newTopic: string) => {
+    setSelectedTopic(newTopic);
+    resetQuestionAndRelatedState();
+    // Only fetch if newTopic is not empty or just whitespace
+    if (newTopic?.trim() && difficulty) {
+      fetchQuestionForChallenge(newTopic, difficulty);
+    } else if (!newTopic?.trim()){
+      setQuestion(null); // Clear question if topic is cleared or empty
+    }
+  }, [difficulty, fetchQuestionForChallenge, resetQuestionAndRelatedState]);
+
   const handleSubmitCode = async () => {
-    if (!topic || !difficulty || !code.trim()) {
+    if (!selectedTopic || !difficulty || !code.trim()) {
       setError("Missing information to grade code. Ensure topic, difficulty, and code are set.");
       toast({ variant: "destructive", title: "Error", description: "Cannot submit: Missing topic, difficulty, or code." });
       return;
@@ -83,7 +97,7 @@ export default function CodeCrafterPage() {
     try {
       const gradingInput: GradeCodeInput = {
         code,
-        topic,
+        topic: selectedTopic,
         difficulty,
       };
       const result: GradeCodeOutput = await gradeCode(gradingInput);
@@ -98,17 +112,25 @@ export default function CodeCrafterPage() {
     }
   };
 
-  const isEditorDisabled = !topic || !question || isLoadingTopic || isLoadingQuestion;
+  const isEditorDisabled = !selectedTopic?.trim() || !question || isLoadingQuestion || isSubmittingCode;
+  const isSelectorDisabled = isLoadingQuestion || isSubmittingCode;
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground font-body">
       <AppHeader />
       <main className="flex-grow container mx-auto px-4 py-8 space-y-8">
-        <DifficultySelector
-          selectedDifficulty={difficulty}
-          onDifficultyChange={handleDifficultyChange}
-          disabled={isLoadingTopic || isLoadingQuestion || isSubmittingCode}
-        />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <DifficultySelector
+            selectedDifficulty={difficulty}
+            onDifficultyChange={handleDifficultyChange}
+            disabled={isSelectorDisabled}
+          />
+          <TopicSelector
+            currentTopic={selectedTopic}
+            onTopicChange={handleTopicChange}
+            disabled={isSelectorDisabled}
+          />
+        </div>
 
         {error && (
           <Alert variant="destructive" className="transition-all animate-in fade-in-50">
@@ -122,9 +144,8 @@ export default function CodeCrafterPage() {
           <section aria-labelledby="challenge-heading">
             <h2 id="challenge-heading" className="sr-only">Challenge Details</h2>
             <ChallengeDisplay
-              topic={topic}
+              topic={selectedTopic}
               question={question}
-              isLoadingTopic={isLoadingTopic}
               isLoadingQuestion={isLoadingQuestion}
             />
           </section>
