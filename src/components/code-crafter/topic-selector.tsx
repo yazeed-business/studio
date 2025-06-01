@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { BookMarked } from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { BookMarked, Check } from 'lucide-react';
 
 interface TopicSelectorProps {
   currentTopic: string | null;
@@ -33,30 +34,45 @@ export const TopicSelector: FC<TopicSelectorProps> = ({
   onTopicChange,
   disabled,
 }) => {
-  const [isCustomMode, setIsCustomMode] = useState<boolean>(() => 
-    !!currentTopic && !PREDEFINED_TOPICS.includes(currentTopic)
-  );
+  const [isCustomMode, setIsCustomMode] = useState<boolean>(false);
+  const [customTopicDraft, setCustomTopicDraft] = useState<string>("");
 
   useEffect(() => {
-    setIsCustomMode(!!currentTopic && !PREDEFINED_TOPICS.includes(currentTopic));
+    const initiallyCustom = !!currentTopic && !PREDEFINED_TOPICS.includes(currentTopic);
+    setIsCustomMode(initiallyCustom);
+    if (initiallyCustom) {
+      setCustomTopicDraft(currentTopic || "");
+    } else if (!currentTopic && !isCustomMode) { 
+      // If topic is cleared externally (e.g. difficulty change) and we are not in custom mode, clear draft.
+      setCustomTopicDraft("");
+    }
+    // If currentTopic is predefined, customTopicDraft will be cleared by handleSelectChange or this effect.
+    // If user is actively typing in custom mode, this effect shouldn't overwrite their draft
+    // unless currentTopic itself changes to something that forces non-custom mode or clears it.
   }, [currentTopic]);
+
 
   const handleSelectChange = (value: string) => {
     if (value === OTHER_TOPIC_VALUE) {
       setIsCustomMode(true);
-      if (currentTopic && PREDEFINED_TOPICS.includes(currentTopic)) {
-        onTopicChange(""); 
-      } else if (!currentTopic) {
-        onTopicChange(""); 
-      }
+      // Do not call onTopicChange here. User needs to type and confirm.
+      // customTopicDraft retains its value if user was already typing.
     } else {
       setIsCustomMode(false);
+      setCustomTopicDraft(""); // Clear draft when a predefined topic is selected
       onTopicChange(value); 
     }
   };
 
   const handleCustomInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    onTopicChange(event.target.value); 
+    setCustomTopicDraft(event.target.value);
+    // Do NOT call onTopicChange here.
+  };
+
+  const handleConfirmCustomTopic = () => {
+    if (customTopicDraft.trim()) {
+      onTopicChange(customTopicDraft.trim());
+    }
   };
 
   let dropdownDisplayValue: string | undefined;
@@ -65,11 +81,11 @@ export const TopicSelector: FC<TopicSelectorProps> = ({
   } else if (currentTopic && PREDEFINED_TOPICS.includes(currentTopic)) {
     dropdownDisplayValue = currentTopic;
   } else {
+    // Handles null currentTopic or if currentTopic is custom but isCustomMode is false (e.g., during transition)
+    // This will show the placeholder in SelectValue
     dropdownDisplayValue = undefined; 
   }
   
-  const customInputValue = isCustomMode ? (currentTopic || "") : "";
-
   return (
     <Card className="shadow-lg">
       <CardHeader>
@@ -101,18 +117,28 @@ export const TopicSelector: FC<TopicSelectorProps> = ({
         </div>
 
         {isCustomMode && (
-          <div className="animate-in fade-in-50 duration-300">
-            <Label htmlFor="custom-topic-input" className="mb-1 block">Or enter your custom topic</Label>
-            <Input
-              id="custom-topic-input"
-              type="text"
-              placeholder="e.g., Advanced React Hooks"
-              value={customInputValue}
-              onChange={handleCustomInputChange}
-              disabled={disabled}
-              aria-label="Custom topic input"
+          <div className="animate-in fade-in-50 duration-300 space-y-2">
+            <div>
+              <Label htmlFor="custom-topic-input" className="mb-1 block">Enter your custom topic</Label>
+              <Input
+                id="custom-topic-input"
+                type="text"
+                placeholder="e.g., Advanced React Hooks"
+                value={customTopicDraft}
+                onChange={handleCustomInputChange}
+                disabled={disabled}
+                aria-label="Custom topic input"
+                className="w-full"
+              />
+            </div>
+            <Button
+              onClick={handleConfirmCustomTopic}
+              disabled={disabled || !customTopicDraft.trim()}
               className="w-full"
-            />
+            >
+              <Check className="mr-2 h-4 w-4" />
+              Set Custom Topic
+            </Button>
           </div>
         )}
       </CardContent>
