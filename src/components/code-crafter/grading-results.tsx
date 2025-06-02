@@ -1,18 +1,52 @@
+
 "use client";
 
 import type { FC } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, Star, MessageSquare } from "lucide-react";
-import type { GradeCodeOutput } from '@/ai/flows/code-grading';
+import { Button } from "@/components/ui/button";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { CheckCircle2, XCircle, Star, MessageSquare, Lightbulb, Loader2, AlertCircle, BookOpen, Code } from "lucide-react";
+import type { GradeCodeOutput, GradeCodeInput } from '@/ai/flows/code-grading'; // Assuming GradeCodeInput might be useful if we refine
+import type { AnswerGradingOutput, AnswerGradingInput } from '@/ai/flows/answer-grading';
+import type { SolutionGenerationOutput } from '@/ai/flows/solution-generation';
+import { Alert, AlertDescription, AlertTitle as AlertTitleUi } from "@/components/ui/alert"; // Renamed to avoid conflict
+
+
+type Difficulty = "Beginner" | "Intermediate" | "Advanced";
+type ActiveDisplayType = "coding" | "conceptual" | null;
+
 
 interface GradingResultsProps {
-  result: GradeCodeOutput | null;
-  isLoading: boolean;
+  result: GradeCodeOutput | AnswerGradingOutput | null;
+  isLoading: boolean; // Loading grading
+  onShowSolution: () => void;
+  generatedSolution: SolutionGenerationOutput | null;
+  isLoadingSolution: boolean;
+  solutionError: string | null;
+  // Props needed to call onShowSolution effectively
+  question: string | null;
+  topic: string | null;
+  difficulty: Difficulty | null;
+  questionType: ActiveDisplayType;
 }
 
-export const GradingResults: FC<GradingResultsProps> = ({ result, isLoading }) => {
+export const GradingResults: FC<GradingResultsProps> = ({
+  result,
+  isLoading,
+  onShowSolution,
+  generatedSolution,
+  isLoadingSolution,
+  solutionError,
+  question, // current question text
+  topic,
+  difficulty,
+  questionType
+}) => {
+
+  const canShowSolutionButton = result && !result.passed && !generatedSolution && question && topic && difficulty && questionType;
+
   if (isLoading) {
     return (
       <Card className="shadow-lg">
@@ -33,7 +67,7 @@ export const GradingResults: FC<GradingResultsProps> = ({ result, isLoading }) =
     );
   }
 
-  if (!result) {
+  if (!result && !isLoadingSolution && !generatedSolution && !solutionError) {
     return (
        <Card className="shadow-lg border-dashed border-muted">
         <CardHeader>
@@ -42,41 +76,96 @@ export const GradingResults: FC<GradingResultsProps> = ({ result, isLoading }) =
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">Submit your code to see the grading results.</p>
+          <p className="text-muted-foreground">Submit your {questionType === 'coding' ? 'code' : 'answer'} to see the grading results.</p>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card className={`shadow-lg transition-all ${result.passed ? 'border-green-500' : 'border-red-500'}`}>
+    <Card className={`shadow-lg transition-all ${result && (result.passed ? 'border-green-500' : 'border-red-500')}`}>
       <CardHeader>
         <CardTitle className="font-headline text-xl flex items-center">
           <Star className="mr-2 h-6 w-6 text-primary" /> AI Feedback
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <p className="text-lg font-semibold">Score: {result.score}/100</p>
-            <Badge variant={result.passed ? "default" : "destructive"} className={result.passed ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}>
-              {result.passed ? (
-                <CheckCircle2 className="mr-1 h-4 w-4" />
-              ) : (
-                <XCircle className="mr-1 h-4 w-4" />
-              )}
-              {result.passed ? "Passed" : "Failed"}
-            </Badge>
+      {result && (
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <p className="text-lg font-semibold">Score: {result.score}/100</p>
+              <Badge variant={result.passed ? "default" : "destructive"} className={result.passed ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}>
+                {result.passed ? (
+                  <CheckCircle2 className="mr-1 h-4 w-4" />
+                ) : (
+                  <XCircle className="mr-1 h-4 w-4" />
+                )}
+                {result.passed ? "Passed" : "Failed"}
+              </Badge>
+            </div>
           </div>
-        </div>
-        <div>
-          <h4 className="text-md font-semibold mb-1 flex items-center">
-            <MessageSquare className="mr-2 h-5 w-5 text-accent"/>
-            Feedback:
-          </h4>
-          <CardDescription className="text-base whitespace-pre-wrap bg-muted/50 p-3 rounded-md">{result.feedback}</CardDescription>
-        </div>
-      </CardContent>
+          <div>
+            <h4 className="text-md font-semibold mb-1 flex items-center">
+              <MessageSquare className="mr-2 h-5 w-5 text-accent"/>
+              Feedback:
+            </h4>
+            <CardDescription className="text-base whitespace-pre-wrap bg-muted/50 p-3 rounded-md">{result.feedback}</CardDescription>
+          </div>
+
+          {canShowSolutionButton && (
+            <Button onClick={onShowSolution} disabled={isLoadingSolution} className="w-full mt-4">
+              {isLoadingSolution ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Lightbulb className="mr-2 h-4 w-4" />
+              )}
+              {isLoadingSolution ? "Generating Solution..." : "Show Solution"}
+            </Button>
+          )}
+        </CardContent>
+      )}
+
+      {(isLoadingSolution || generatedSolution || solutionError) && (
+        <CardContent className="pt-4 mt-4 border-t border-border space-y-3">
+          {isLoadingSolution && (
+            <div className="flex items-center text-muted-foreground">
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              <span>Generating solution, please wait...</span>
+            </div>
+          )}
+          {solutionError && !isLoadingSolution && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitleUi>Solution Error</AlertTitleUi>
+              <AlertDescription>{solutionError}</AlertDescription>
+            </Alert>
+          )}
+          {generatedSolution && !isLoadingSolution && (
+            <Accordion type="single" collapsible className="w-full">
+              <AccordionItem value="solution">
+                <AccordionTrigger className="text-accent hover:text-accent/90 font-semibold text-base">
+                  {questionType === 'coding' ? <Code className="mr-2 h-5 w-5" /> : <BookOpen className="mr-2 h-5 w-5" />}
+                  View Generated Solution
+                </AccordionTrigger>
+                <AccordionContent className="pt-2 space-y-4">
+                  <div>
+                    <h5 className="font-semibold mb-1">Solution:</h5>
+                    {questionType === 'coding' ? (
+                       <pre className="bg-muted/70 p-3 rounded-md text-sm overflow-x-auto font-code max-h-96"><code>{generatedSolution.solution}</code></pre>
+                    ) : (
+                       <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md whitespace-pre-wrap">{generatedSolution.solution}</p>
+                    )}
+                  </div>
+                  <div>
+                    <h5 className="font-semibold mb-1">Explanation:</h5>
+                    <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md whitespace-pre-wrap">{generatedSolution.explanation}</p>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          )}
+        </CardContent>
+      )}
     </Card>
   );
 };

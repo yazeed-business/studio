@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { generateQuestion, type QuestionGenerationInput, type QuestionGenerationOutput } from "@/ai/flows/question-generation";
 import { gradeCode, type GradeCodeInput, type GradeCodeOutput } from "@/ai/flows/code-grading";
 import { gradeAnswer, type AnswerGradingInput, type AnswerGradingOutput } from "@/ai/flows/answer-grading";
+import { generateSolution, type SolutionGenerationInput, type SolutionGenerationOutput } from "@/ai/flows/solution-generation";
 import { AlertCircle, Code, MessageCircle, Home, RotateCcw, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
@@ -38,6 +39,9 @@ function ChallengePageContent() {
   const [conceptualAnswer, setConceptualAnswer] = useState<string>("");
   
   const [gradingResult, setGradingResult] = useState<GradeCodeOutput | AnswerGradingOutput | null>(null);
+  const [generatedSolution, setGeneratedSolution] = useState<SolutionGenerationOutput | null>(null);
+  const [isLoadingSolution, setIsLoadingSolution] = useState<boolean>(false);
+  const [solutionError, setSolutionError] = useState<string | null>(null);
 
   const [isLoadingQuestion, setIsLoadingQuestion] = useState<boolean>(false);
   const [isSubmittingChallenge, setIsSubmittingChallenge] = useState<boolean>(false);
@@ -52,6 +56,9 @@ function ChallengePageContent() {
     setConceptualAnswer("");
     setGradingResult(null);
     setError(null);
+    setGeneratedSolution(null);
+    setIsLoadingSolution(false);
+    setSolutionError(null);
   }, []);
 
   const fetchQuestionForChallenge = useCallback(async (
@@ -113,7 +120,7 @@ function ChallengePageContent() {
       setError("Challenge parameters not found. Please configure your challenge from the dashboard.");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]); // fetchQuestionForChallenge is stable
+  }, [searchParams]);
 
 
   const currentDisplayedQuestion = useMemo(() => {
@@ -147,6 +154,8 @@ function ChallengePageContent() {
 
     setIsSubmittingChallenge(true);
     setGradingResult(null);
+    setGeneratedSolution(null); // Clear previous solution on new submission
+    setSolutionError(null);
     setError(null);
 
     try {
@@ -169,14 +178,42 @@ function ChallengePageContent() {
     }
   };
 
+  const handleShowSolution = async () => {
+    if (!initialTopic || !initialDifficulty || !activeDisplayType || !currentDisplayedQuestion) {
+      setSolutionError("Cannot generate solution: Missing challenge details.");
+      toast({ variant: "destructive", title: "Error", description: "Missing challenge details for solution."});
+      return;
+    }
+    setIsLoadingSolution(true);
+    setSolutionError(null);
+    setGeneratedSolution(null);
+    try {
+      const solutionInput: SolutionGenerationInput = {
+        topic: initialTopic,
+        difficulty: initialDifficulty,
+        question: currentDisplayedQuestion,
+        questionType: activeDisplayType,
+      };
+      const solutionOutput = await generateSolution(solutionInput);
+      setGeneratedSolution(solutionOutput);
+      toast({ title: "Solution Generated", description: "The solution is now available below."});
+    } catch (err) {
+      console.error("Error generating solution:", err);
+      setSolutionError("Failed to generate solution. Please try again.");
+      toast({ variant: "destructive", title: "Solution Error", description: "Could not generate the solution."});
+    } finally {
+      setIsLoadingSolution(false);
+    }
+  };
+
   const handleRestartChallenge = () => {
     if (initialTopic && initialDifficulty && initialPreference) {
       fetchQuestionForChallenge(initialTopic, initialDifficulty, initialPreference);
     }
   };
   
-  const isInputDisabled = !initialTopic?.trim() || !currentDisplayedQuestion || isLoadingQuestion || isSubmittingChallenge;
-  const isSelectorDisabled = isLoadingQuestion || isSubmittingChallenge;
+  const isInputDisabled = !initialTopic?.trim() || !currentDisplayedQuestion || isLoadingQuestion || isSubmittingChallenge || isLoadingSolution;
+  const isSelectorDisabled = isLoadingQuestion || isSubmittingChallenge || isLoadingSolution;
 
   if (hasValidParams === null) {
     return (
@@ -219,16 +256,16 @@ function ChallengePageContent() {
         <div className="flex justify-between items-center">
            <h1 className="text-2xl font-headline">Your Challenge</h1>
            <div className="flex gap-2">
-            <Button onClick={handleRestartChallenge} variant="outline" disabled={isLoadingQuestion || isSubmittingChallenge}>
+            <Button onClick={handleRestartChallenge} variant="outline" disabled={isSelectorDisabled}>
               <RotateCcw className="mr-2 h-4 w-4" /> Restart This Challenge
             </Button>
-            <Button onClick={() => router.push('/')} variant="outline">
+            <Button onClick={() => router.push('/')} variant="outline" disabled={isSelectorDisabled && !isLoadingQuestion}>
               <Home className="mr-2 h-4 w-4" /> New Challenge (Dashboard)
             </Button>
            </div>
         </div>
 
-        {error && !isLoadingQuestion && ( // Only show general errors if not loading specific Q error
+        {error && !isLoadingQuestion && (
           <Alert variant="destructive" className="transition-all animate-in fade-in-50">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Error</AlertTitle>
@@ -240,16 +277,16 @@ function ChallengePageContent() {
           <div className="flex justify-center gap-4 my-4">
             <Button
               variant={activeDisplayType === 'coding' ? 'default' : 'outline'}
-              onClick={() => setActiveDisplayType('coding')}
-              disabled={isLoadingQuestion || isSubmittingChallenge}
+              onClick={() => { setGradingResult(null); setGeneratedSolution(null); setActiveDisplayType('coding'); }}
+              disabled={isSelectorDisabled}
             >
               <Code className="mr-2 h-4 w-4" />
               Coding Challenge
             </Button>
             <Button
               variant={activeDisplayType === 'conceptual' ? 'default' : 'outline'}
-              onClick={() => setActiveDisplayType('conceptual')}
-              disabled={isLoadingQuestion || isSubmittingChallenge}
+              onClick={() => { setGradingResult(null); setGeneratedSolution(null); setActiveDisplayType('conceptual');}}
+              disabled={isSelectorDisabled}
             >
               <MessageCircle className="mr-2 h-4 w-4" />
               Conceptual Question
@@ -300,7 +337,18 @@ function ChallengePageContent() {
             {activeDisplayType && challengeData && (currentDisplayedQuestion || isLoadingQuestion) && (
               <section aria-labelledby="feedback-heading">
                 <h2 id="feedback-heading" className="sr-only">Grading Feedback</h2>
-                <GradingResults result={gradingResult} isLoading={isSubmittingChallenge} />
+                <GradingResults
+                  result={gradingResult}
+                  isLoading={isSubmittingChallenge}
+                  onShowSolution={handleShowSolution}
+                  generatedSolution={generatedSolution}
+                  isLoadingSolution={isLoadingSolution}
+                  solutionError={solutionError}
+                  question={currentDisplayedQuestion} // Needed for solution generation context
+                  topic={initialTopic} // Needed for solution generation context
+                  difficulty={initialDifficulty} // Needed for solution generation context
+                  questionType={activeDisplayType} // Needed for solution generation context
+                />
               </section>
             )}
              {!currentDisplayedQuestion && !isLoadingQuestion && initialTopic && (
