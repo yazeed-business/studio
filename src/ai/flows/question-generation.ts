@@ -4,8 +4,8 @@
 /**
  * @fileOverview Question generation flow.
  *
- * This file defines a Genkit flow that generates a coding or conceptual question and a corresponding hint
- * based on a specified topic, difficulty, and preferred question type.
+ * This file defines a Genkit flow that generates coding or conceptual questions (or both)
+ * and corresponding hints based on a specified topic, difficulty, and preferred question type.
  * It exports the QuestionGenerationInput and QuestionGenerationOutput types, as well as the
  * generateQuestion function to call the flow.
  */
@@ -18,43 +18,54 @@ const QuestionGenerationInputSchema = z.object({
   difficulty: z
     .enum(['Beginner', 'Intermediate', 'Advanced'])
     .describe('The difficulty level of the question.'),
-  preferredQuestionType: z.enum(["coding", "conceptual", "any"]).describe("The user's preferred type of question. 'any' means the AI can choose or alternate.")
+  preferredQuestionType: z.enum(["coding", "conceptual", "any"]).describe("The user's preferred type of question. 'any' means both types should be generated.")
 });
 export type QuestionGenerationInput = z.infer<typeof QuestionGenerationInputSchema>;
 
 const QuestionGenerationOutputSchema = z.object({
-  question: z.string().describe('The generated coding or conceptual question.'),
-  hint: z.string().describe('A concise, actionable hint for the generated question. It should guide the user without giving away the solution.'),
-  questionType: z.enum(["coding", "conceptual"]).describe("The type of question generated, either a coding task or a conceptual query."),
+  codingQuestion: z.string().optional().describe('The coding question, if generated.'),
+  codingHint: z.string().optional().describe('Hint for the coding question, if generated.'),
+  conceptualQuestion: z.string().optional().describe('The conceptual question, if generated.'),
+  conceptualHint: z.string().optional().describe('Hint for the conceptual question, if generated.'),
+  questionTypeGenerated: z.enum(['coding', 'conceptual', 'both']).describe('Specifies if a coding, conceptual, or both types of questions were successfully generated.'),
 });
 export type QuestionGenerationOutput = z.infer<typeof QuestionGenerationOutputSchema>;
 
-export async function generateQuestion(input: QuestionGenerationInput): Promise<QuestionGenerationOutput> {
-  return generateQuestionFlow(input);
-}
 
-const generateQuestionPrompt = ai.definePrompt({
-  name: 'generateQuestionPrompt',
-  input: {schema: QuestionGenerationInputSchema},
-  output: {schema: QuestionGenerationOutputSchema},
-  prompt: `You are an AI expert in generating coding questions and conceptual questions, along with helpful hints for different skill levels.
+// Internal schema for the prompt that generates a single question type
+const SingleQuestionPromptInputSchema = z.object({
+    topic: z.string(),
+    difficulty: z.enum(['Beginner', 'Intermediate', 'Advanced']),
+    questionTypeToGenerate: z.enum(['coding', 'conceptual']),
+});
 
-  User's preferred question type: {{{preferredQuestionType}}}
-  If preferredQuestionType is 'coding', you MUST generate a coding question.
-  If preferredQuestionType is 'conceptual', you MUST generate a conceptual question.
-  If preferredQuestionType is 'any', you may choose to generate EITHER a coding OR a conceptual question relevant to the topic and difficulty.
+const SingleQuestionPromptOutputSchema = z.object({
+    question: z.string().describe('The generated question.'),
+    hint: z.string().describe('A concise, actionable hint for the generated question.'),
+});
 
-  Based on the topic, difficulty, and the preferred question type, generate:
-  1. A specific coding question OR a conceptual question that aligns with the user's preference.
+const generateSingleQuestionPrompt = ai.definePrompt({
+  name: 'generateSingleQuestionPrompt',
+  input: { schema: SingleQuestionPromptInputSchema },
+  output: { schema: SingleQuestionPromptOutputSchema },
+  prompt: `You are an AI expert in generating {{questionTypeToGenerate}} questions and helpful hints for different skill levels.
+
+  Based on the topic, difficulty, and the required question type ({{questionTypeToGenerate}}), generate:
+  1. A specific {{questionTypeToGenerate}} question.
   2. A single, concise, actionable hint for that question. The hint should help the user identify a key concept, suggest a general approach, or point towards a relevant language feature or pitfall. For conceptual questions, the hint might point towards key areas to research or consider. **Crucially, the hint must not give away the direct solution or include any code snippets.** Focus on guiding the user's thinking process.
-  3. Indicate whether the generated item is a "coding" question or a "conceptual" question by setting the questionType field appropriately.
 
   Topic: {{{topic}}}
   Difficulty: {{{difficulty}}}
 
-  Provide the question, the hint, and the actual question type generated (coding or conceptual) according to the output schema.
+  Provide the question and the hint according to the output schema.
+  Ensure the question is distinct and appropriate for the specified type.
   `,
 });
+
+
+export async function generateQuestion(input: QuestionGenerationInput): Promise<QuestionGenerationOutput> {
+  return generateQuestionFlow(input);
+}
 
 const generateQuestionFlow = ai.defineFlow(
   {
@@ -62,8 +73,56 @@ const generateQuestionFlow = ai.defineFlow(
     inputSchema: QuestionGenerationInputSchema,
     outputSchema: QuestionGenerationOutputSchema,
   },
-  async input => {
-    const {output} = await generateQuestionPrompt(input);
-    return output!;
+  async (input: QuestionGenerationInput): Promise<QuestionGenerationOutput> => {
+    if (input.preferredQuestionType === 'coding') {
+      const { output } = await generateSingleQuestionPrompt({
+        topic: input.topic,
+        difficulty: input.difficulty,
+        questionTypeToGenerate: 'coding',
+      });
+      if (!output) throw new Error('Failed to generate coding question.');
+      return {
+        codingQuestion: output.question,
+        codingHint: output.hint,
+        questionTypeGenerated: 'coding',
+      };
+    } else if (input.preferredQuestionType === 'conceptual') {
+      const { output } = await generateSingleQuestionPrompt({
+        topic: input.topic,
+        difficulty: input.difficulty,
+        questionTypeToGenerate: 'conceptual',
+      });
+      if (!output) throw new Error('Failed to generate conceptual question.');
+      return {
+        conceptualQuestion: output.question,
+        conceptualHint: output.hint,
+        questionTypeGenerated: 'conceptual',
+      };
+    } else { // 'any', meaning user selected "Both"
+      const [codingResponse, conceptualResponse] = await Promise.all([
+        generateSingleQuestionPrompt({
+          topic: input.topic,
+          difficulty: input.difficulty,
+          questionTypeToGenerate: 'coding',
+        }),
+        generateSingleQuestionPrompt({
+          topic: input.topic,
+          difficulty: input.difficulty,
+          questionTypeToGenerate: 'conceptual',
+        }),
+      ]);
+      
+      if (!codingResponse.output || !conceptualResponse.output) {
+        throw new Error('Failed to generate one or both question types.');
+      }
+
+      return {
+        codingQuestion: codingResponse.output.question,
+        codingHint: codingResponse.output.hint,
+        conceptualQuestion: conceptualResponse.output.question,
+        conceptualHint: conceptualResponse.output.hint,
+        questionTypeGenerated: 'both',
+      };
+    }
   }
 );

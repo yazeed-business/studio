@@ -8,21 +8,21 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Badge } from "@/components/ui/badge";
 import { Lightbulb, HelpCircle, Puzzle, BookOpen } from "lucide-react";
 
-type QuestionType = "coding" | "conceptual" | null;
+type ActiveDisplayType = "coding" | "conceptual" | null;
 
 interface ChallengeDisplayProps {
   topic: string | null;
-  question: string | null;
-  questionType: QuestionType;
+  question: string | null; // This will be the question for the activeDisplayType
+  questionType: ActiveDisplayType; // This is the active type being displayed
   isLoadingQuestion: boolean;
-  questionHint: string | null;
+  questionHint: string | null; // Hint for the active question
   isQuestionAvailable: boolean;
 }
 
 export const ChallengeDisplay: FC<ChallengeDisplayProps> = ({
   topic,
   question,
-  questionType,
+  questionType, // Renamed from activeDisplayType for clarity within this component
   isLoadingQuestion,
   questionHint,
   isQuestionAvailable,
@@ -57,11 +57,11 @@ export const ChallengeDisplay: FC<ChallengeDisplayProps> = ({
           <h3 className="text-lg font-semibold mb-2 flex items-center">
              <HelpCircle className="mr-2 h-5 w-5 text-accent" /> Topic:
           </h3>
-          {isLoadingQuestion && !topic ? ( <Skeleton className="h-5 w-3/4" /> ) 
+          {isLoadingQuestion && !topic && !question ? ( <Skeleton className="h-5 w-3/4" /> ) 
           : topic ? (
             <CardDescription className="text-base">{topic}</CardDescription>
           ) : (
-            <CardDescription className="text-base text-muted-foreground">Select a difficulty and topic to generate a challenge.</CardDescription>
+            <CardDescription className="text-base text-muted-foreground">Select difficulty, topic, and preference to generate a challenge.</CardDescription>
           )}
         </div>
         <div>
@@ -76,9 +76,9 @@ export const ChallengeDisplay: FC<ChallengeDisplayProps> = ({
           ) : question ? (
             <CardDescription className="text-base whitespace-pre-wrap">{question}</CardDescription>
           ) : topic && topic.trim() ? ( 
-             <CardDescription className="text-base text-muted-foreground">Generating question for "{topic}"... (Select difficulty if not done)</CardDescription>
+             <CardDescription className="text-base text-muted-foreground">Generating question(s) for "{topic}"...</CardDescription>
           ) : (
-            <CardDescription className="text-base text-muted-foreground">Select a topic and difficulty level first.</CardDescription>
+            <CardDescription className="text-base text-muted-foreground">Select settings above to see a question.</CardDescription>
           )}
         </div>
 
@@ -95,6 +95,11 @@ export const ChallengeDisplay: FC<ChallengeDisplayProps> = ({
               </AccordionItem>
             </Accordion>
           </div>
+        )}
+         {!isLoadingQuestion && !question && !topic &&(
+            <CardDescription className="text-base text-muted-foreground pt-4 border-t mt-4">
+              Please make your selections above to start your learning journey!
+            </CardDescription>
         )}
       </CardContent>
     </Card>
