@@ -29,7 +29,7 @@ export const DifficultySelector: FC<DifficultySelectorProps> = ({
         <RadioGroup
           value={selectedDifficulty ?? ""}
           onValueChange={(value) => onDifficultyChange(value as Difficulty)}
-          className="grid grid-cols-1 sm:grid-cols-3 gap-4"
+          className="grid grid-cols-3 gap-4"
           disabled={disabled}
         >
           {difficulties.map((difficulty) => (
