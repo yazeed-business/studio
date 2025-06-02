@@ -1,7 +1,7 @@
 
 "use client";
 
-import { CodeXml, LogIn, LogOut, UserCircle, Loader2 } from 'lucide-react';
+import { CodeXml, LogIn, LogOut, UserCircle, Loader2, History } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -37,7 +37,6 @@ export function AppHeader() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-10 w-10 rounded-full">
                   <Avatar className="h-9 w-9">
-                    {/* Placeholder for user image, you can extend this later */}
                     <AvatarImage src="" alt={user.email || "User"} /> 
                     <AvatarFallback>
                       {user.email ? user.email.charAt(0).toUpperCase() : <UserCircle />}
@@ -54,6 +53,13 @@ export function AppHeader() {
                     </p>
                   </div>
                 </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild className="cursor-pointer">
+                  <Link href="/history">
+                    <History className="mr-2 h-4 w-4" />
+                    <span>My History</span>
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={signOutUser} className="cursor-pointer">
                   <LogOut className="mr-2 h-4 w-4" />

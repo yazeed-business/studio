@@ -18,10 +18,26 @@ import { generateSolution, type SolutionGenerationInput, type SolutionGeneration
 import { AlertCircle, Code, MessageCircle, Home, RotateCcw, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from "@/contexts/AuthContext";
+import { db } from "@/lib/firebase";
+import { collection, addDoc, serverTimestamp, Timestamp } from "firebase/firestore";
 
 type Difficulty = "Beginner" | "Intermediate" | "Advanced";
 type QuestionTypePreference = "coding" | "conceptual" | "both";
 type ActiveDisplayType = "coding" | "conceptual";
+
+export interface ChallengeHistoryEntry {
+  id?: string; // Firestore ID, added after fetch
+  userId: string;
+  topic: string;
+  difficulty: Difficulty;
+  questionType: ActiveDisplayType;
+  question: string;
+  userSolution: string; // Can be code or text answer
+  gradingResult: GradeCodeOutput | AnswerGradingOutput;
+  createdAt: Timestamp;
+  // optional, if solution was viewed and we decide to save it
+  // generatedSolution?: SolutionGenerationOutput | null; 
+}
 
 
 function ChallengePageContent() {
@@ -57,9 +73,11 @@ function ChallengePageContent() {
     }
   }, [user, authLoading, router]);
 
-  const resetChallengeState = useCallback(() => {
-    setChallengeData(null);
-    setActiveDisplayType(null);
+  const resetChallengeState = useCallback((resetFull = true) => {
+    if (resetFull) {
+      setChallengeData(null);
+      setActiveDisplayType(null);
+    }
     setCode("");
     setConceptualAnswer("");
     setGradingResult(null);
@@ -75,12 +93,12 @@ function ChallengePageContent() {
     currentPreference: QuestionTypePreference
   ) => {
     if (!currentTopic?.trim() || !currentDifficulty || !currentPreference) {
-      resetChallengeState();
+      resetChallengeState(true);
       return;
     }
 
     setIsLoadingQuestion(true);
-    resetChallengeState(); 
+    resetChallengeState(true); 
 
     const preferredTypeForApi = currentPreference === "both" ? "any" : currentPreference;
 
@@ -113,7 +131,7 @@ function ChallengePageContent() {
   }, [toast, resetChallengeState]);
 
   useEffect(() => {
-    if (authLoading || !user) return; // Wait for auth check
+    if (authLoading || !user) return; 
 
     const difficultyParam = searchParams.get("difficulty") as Difficulty | null;
     const topicParam = searchParams.get("topic");
@@ -143,6 +161,35 @@ function ChallengePageContent() {
     return activeDisplayType === 'coding' ? challengeData.codingHint : challengeData.conceptualHint;
   }, [challengeData, activeDisplayType]);
 
+  const saveChallengeToHistory = async (
+    currentGradingResult: GradeCodeOutput | AnswerGradingOutput,
+    userSolution: string
+  ) => {
+    if (!user || !initialTopic || !initialDifficulty || !activeDisplayType || !currentDisplayedQuestion) {
+      console.error("Missing data to save history");
+      return;
+    }
+
+    const historyEntry: Omit<ChallengeHistoryEntry, 'id' | 'createdAt'> & { createdAt: any } = {
+      userId: user.uid,
+      topic: initialTopic,
+      difficulty: initialDifficulty,
+      questionType: activeDisplayType,
+      question: currentDisplayedQuestion,
+      userSolution: userSolution,
+      gradingResult: currentGradingResult,
+      createdAt: serverTimestamp(),
+    };
+
+    try {
+      await addDoc(collection(db, "challengeHistory"), historyEntry);
+      toast({ title: "Challenge Saved!", description: "Your attempt has been saved to your history." });
+    } catch (e) {
+      console.error("Error adding document: ", e);
+      toast({ variant: "destructive", title: "History Save Error", description: "Could not save your attempt to history." });
+    }
+  };
+
   const handleSubmitChallenge = async () => {
     if (!initialTopic || !initialDifficulty || !activeDisplayType || !currentDisplayedQuestion) {
       setError("Missing information to grade. Ensure topic, difficulty, and question type are set.");
@@ -150,13 +197,15 @@ function ChallengePageContent() {
       return;
     }
 
-    if (activeDisplayType === "coding" && !code.trim()) {
+    const currentUserSolution = activeDisplayType === "coding" ? code : conceptualAnswer;
+
+    if (activeDisplayType === "coding" && !currentUserSolution.trim()) {
       setError("Code editor is empty. Please write your code before submitting.");
       toast({ variant: "destructive", title: "Error", description: "Cannot submit: Code is empty." });
       return;
     }
 
-    if (activeDisplayType === "conceptual" && !conceptualAnswer.trim()) {
+    if (activeDisplayType === "conceptual" && !currentUserSolution.trim()) {
       setError("Answer field is empty. Please write your answer before submitting.");
       toast({ variant: "destructive", title: "Error", description: "Cannot submit: Answer is empty." });
       return;
@@ -171,14 +220,19 @@ function ChallengePageContent() {
     try {
       let result: GradeCodeOutput | AnswerGradingOutput;
       if (activeDisplayType === "coding") {
-        const gradingInput: GradeCodeInput = { code, topic: initialTopic, difficulty: initialDifficulty };
+        const gradingInput: GradeCodeInput = { code: currentUserSolution, topic: initialTopic, difficulty: initialDifficulty };
         result = await gradeCode(gradingInput);
       } else { 
-        const gradingInput: AnswerGradingInput = { userAnswer: conceptualAnswer, question: currentDisplayedQuestion, topic: initialTopic, difficulty: initialDifficulty };
+        const gradingInput: AnswerGradingInput = { userAnswer: currentUserSolution, question: currentDisplayedQuestion, topic: initialTopic, difficulty: initialDifficulty };
         result = await gradeAnswer(gradingInput);
       }
       setGradingResult(result);
       toast({ title: "Grading Complete!", description: result.passed ? "Congratulations, you passed!" : "Keep practicing!", className: result.passed ? "bg-green-500 text-white" : "bg-red-500 text-white" });
+      
+      if (result.passed && user) {
+        await saveChallengeToHistory(result, currentUserSolution);
+      }
+
     } catch (submissionError) {
       console.error(`Error grading ${activeDisplayType} challenge:`, submissionError);
       setError(`Failed to grade ${activeDisplayType} challenge. Please try again.`);
@@ -221,6 +275,11 @@ function ChallengePageContent() {
       fetchQuestionForChallenge(initialTopic, initialDifficulty, initialPreference);
     }
   };
+
+  const handleSwitchActiveDisplayType = (newType: ActiveDisplayType) => {
+    resetChallengeState(false); // Reset only submission related states, not full challenge data
+    setActiveDisplayType(newType);
+  };
   
   const isInputDisabled = !initialTopic?.trim() || !currentDisplayedQuestion || isLoadingQuestion || isSubmittingChallenge || isLoadingSolution;
   const isSelectorDisabled = isLoadingQuestion || isSubmittingChallenge || isLoadingSolution;
@@ -238,7 +297,7 @@ function ChallengePageContent() {
     );
   }
 
-  if (hasValidParams === null && !authLoading && user) { // Only show loading for params if auth is done
+  if (hasValidParams === null && !authLoading && user) { 
     return (
       <div className="flex flex-col min-h-screen bg-background text-foreground font-body">
         <AppHeader />
@@ -251,7 +310,7 @@ function ChallengePageContent() {
     );
   }
   
-  if (!hasValidParams && !authLoading && user) { // Show error only if auth is done and params are invalid
+  if (!hasValidParams && !authLoading && user) { 
      return (
       <div className="flex flex-col min-h-screen bg-background text-foreground font-body">
         <AppHeader />
@@ -301,7 +360,7 @@ function ChallengePageContent() {
           <div className="flex justify-center gap-4 my-4">
             <Button
               variant={activeDisplayType === 'coding' ? 'default' : 'outline'}
-              onClick={() => { setGradingResult(null); setGeneratedSolution(null); setActiveDisplayType('coding'); }}
+              onClick={() => handleSwitchActiveDisplayType('coding')}
               disabled={isSelectorDisabled}
             >
               <Code className="mr-2 h-4 w-4" />
@@ -309,7 +368,7 @@ function ChallengePageContent() {
             </Button>
             <Button
               variant={activeDisplayType === 'conceptual' ? 'default' : 'outline'}
-              onClick={() => { setGradingResult(null); setGeneratedSolution(null); setActiveDisplayType('conceptual');}}
+              onClick={() => handleSwitchActiveDisplayType('conceptual')}
               disabled={isSelectorDisabled}
             >
               <MessageCircle className="mr-2 h-4 w-4" />
