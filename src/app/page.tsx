@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/layout/app-header";
 import { AppFooter } from "@/components/layout/app-footer";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight, Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Difficulty = "Beginner" | "Intermediate" | "Advanced";
 
@@ -23,6 +24,13 @@ export default function DashboardPage() {
   
   const router = useRouter();
   const { toast } = useToast();
+  const { user, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, authLoading, router]);
 
   const handleStartChallenge = useCallback(async () => {
     if (!difficulty || !selectedTopic?.trim() || !questionTypePreference) {
@@ -43,10 +51,7 @@ export default function DashboardPage() {
     });
 
     try {
-      // The navigation itself might take a moment, especially if there's pre-fetching or other async work.
-      // For this simple case, router.push is mostly synchronous in initiating navigation.
       await router.push(`/challenge?${queryParams.toString()}`);
-      // setIsStartingChallenge(false); // Usually not needed as the component unmounts or context changes.
     } catch (error) {
       console.error("Failed to navigate:", error);
       toast({
@@ -54,12 +59,21 @@ export default function DashboardPage() {
         title: "Navigation Error",
         description: "Could not start the challenge. Please try again.",
       });
-      setIsStartingChallenge(false); // Reset on navigation error
+      setIsStartingChallenge(false);
     }
 
   }, [difficulty, selectedTopic, questionTypePreference, router, toast]);
 
   const isFormIncomplete = !difficulty || !selectedTopic?.trim() || !questionTypePreference;
+
+  if (authLoading || !user) {
+    return (
+      <div className="flex flex-col min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="mt-4 text-muted-foreground">Loading dashboard...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground font-body">
@@ -78,7 +92,6 @@ export default function DashboardPage() {
                 selectedDifficulty={difficulty}
                 onDifficultyChange={(newDifficulty) => {
                   setDifficulty(newDifficulty);
-                  // Optionally clear topic if difficulty changes, or handle dependencies as needed
                 }}
                 disabled={isStartingChallenge} 
               />

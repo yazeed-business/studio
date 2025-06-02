@@ -17,6 +17,7 @@ import { gradeAnswer, type AnswerGradingInput, type AnswerGradingOutput } from "
 import { generateSolution, type SolutionGenerationInput, type SolutionGenerationOutput } from "@/ai/flows/solution-generation";
 import { AlertCircle, Code, MessageCircle, Home, RotateCcw, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Difficulty = "Beginner" | "Intermediate" | "Advanced";
 type QuestionTypePreference = "coding" | "conceptual" | "both";
@@ -27,6 +28,7 @@ function ChallengePageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
+  const { user, loading: authLoading } = useAuth();
 
   const [initialDifficulty, setInitialDifficulty] = useState<Difficulty | null>(null);
   const [initialTopic, setInitialTopic] = useState<string | null>(null);
@@ -48,6 +50,12 @@ function ChallengePageContent() {
   const [error, setError] = useState<string | null>(null);
   const [hasValidParams, setHasValidParams] = useState<boolean | null>(null);
 
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, authLoading, router]);
 
   const resetChallengeState = useCallback(() => {
     setChallengeData(null);
@@ -92,7 +100,7 @@ function ChallengePageContent() {
         setActiveDisplayType("conceptual");
         toast({ title: "Conceptual Question Ready!", description: `A conceptual question for ${currentTopic} (${currentDifficulty}) generated.`});
       } else if (output.questionTypeGenerated === "both") {
-        setActiveDisplayType("coding"); // Default to coding first
+        setActiveDisplayType("coding"); 
         toast({ title: "Challenges Ready!", description: `Coding and conceptual questions for ${currentTopic} (${currentDifficulty}) generated.`});
       }
     } catch (questionError) {
@@ -105,6 +113,8 @@ function ChallengePageContent() {
   }, [toast, resetChallengeState]);
 
   useEffect(() => {
+    if (authLoading || !user) return; // Wait for auth check
+
     const difficultyParam = searchParams.get("difficulty") as Difficulty | null;
     const topicParam = searchParams.get("topic");
     const typeParam = searchParams.get("type") as QuestionTypePreference | null;
@@ -120,7 +130,7 @@ function ChallengePageContent() {
       setError("Challenge parameters not found. Please configure your challenge from the dashboard.");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [searchParams, user, authLoading]);
 
 
   const currentDisplayedQuestion = useMemo(() => {
@@ -154,7 +164,7 @@ function ChallengePageContent() {
 
     setIsSubmittingChallenge(true);
     setGradingResult(null);
-    setGeneratedSolution(null); // Clear previous solution on new submission
+    setGeneratedSolution(null); 
     setSolutionError(null);
     setError(null);
 
@@ -163,7 +173,7 @@ function ChallengePageContent() {
       if (activeDisplayType === "coding") {
         const gradingInput: GradeCodeInput = { code, topic: initialTopic, difficulty: initialDifficulty };
         result = await gradeCode(gradingInput);
-      } else { // conceptual
+      } else { 
         const gradingInput: AnswerGradingInput = { userAnswer: conceptualAnswer, question: currentDisplayedQuestion, topic: initialTopic, difficulty: initialDifficulty };
         result = await gradeAnswer(gradingInput);
       }
@@ -215,19 +225,33 @@ function ChallengePageContent() {
   const isInputDisabled = !initialTopic?.trim() || !currentDisplayedQuestion || isLoadingQuestion || isSubmittingChallenge || isLoadingSolution;
   const isSelectorDisabled = isLoadingQuestion || isSubmittingChallenge || isLoadingSolution;
 
-  if (hasValidParams === null) {
+  if (authLoading || !user) {
     return (
       <div className="flex flex-col min-h-screen bg-background text-foreground font-body">
         <AppHeader />
         <main className="flex-grow container mx-auto px-4 py-8 flex items-center justify-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="ml-4 text-muted-foreground">Verifying authentication...</p>
+        </main>
+        <AppFooter />
+      </div>
+    );
+  }
+
+  if (hasValidParams === null && !authLoading && user) { // Only show loading for params if auth is done
+    return (
+      <div className="flex flex-col min-h-screen bg-background text-foreground font-body">
+        <AppHeader />
+        <main className="flex-grow container mx-auto px-4 py-8 flex items-center justify-center">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+           <p className="ml-4 text-muted-foreground">Loading challenge parameters...</p>
         </main>
         <AppFooter />
       </div>
     );
   }
   
-  if (!hasValidParams) {
+  if (!hasValidParams && !authLoading && user) { // Show error only if auth is done and params are invalid
      return (
       <div className="flex flex-col min-h-screen bg-background text-foreground font-body">
         <AppHeader />
@@ -344,10 +368,10 @@ function ChallengePageContent() {
                   generatedSolution={generatedSolution}
                   isLoadingSolution={isLoadingSolution}
                   solutionError={solutionError}
-                  question={currentDisplayedQuestion} // Needed for solution generation context
-                  topic={initialTopic} // Needed for solution generation context
-                  difficulty={initialDifficulty} // Needed for solution generation context
-                  questionType={activeDisplayType} // Needed for solution generation context
+                  question={currentDisplayedQuestion} 
+                  topic={initialTopic} 
+                  difficulty={initialDifficulty} 
+                  questionType={activeDisplayType} 
                 />
               </section>
             )}
@@ -372,6 +396,7 @@ export default function ChallengePage() {
         <AppHeader />
         <main className="flex-grow container mx-auto px-4 py-8 flex items-center justify-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
+           <p className="ml-4 text-muted-foreground">Loading Challenge...</p>
         </main>
         <AppFooter />
       </div>
