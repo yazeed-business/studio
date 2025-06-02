@@ -11,7 +11,7 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
-export const SolutionGenerationInputSchema = z.object({
+const SolutionGenerationInputSchema = z.object({
   topic: z.string().describe('The topic of the challenge.'),
   difficulty: z.enum(['Beginner', 'Intermediate', 'Advanced']).describe('The difficulty level of the challenge.'),
   question: z.string().describe('The question that was asked.'),
@@ -19,7 +19,7 @@ export const SolutionGenerationInputSchema = z.object({
 });
 export type SolutionGenerationInput = z.infer<typeof SolutionGenerationInputSchema>;
 
-export const SolutionGenerationOutputSchema = z.object({
+const SolutionGenerationOutputSchema = z.object({
   solution: z.string().describe('The well-explained solution to the question. For coding questions, this should be runnable code. For conceptual questions, this should be a detailed explanation.'),
   explanation: z.string().describe('A brief explanation of the key concepts or steps in the solution.'),
 });
