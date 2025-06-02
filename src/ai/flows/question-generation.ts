@@ -3,7 +3,8 @@
 /**
  * @fileOverview Question generation flow.
  *
- * This file defines a Genkit flow that generates a coding question based on a specified topic.
+ * This file defines a Genkit flow that generates a coding question and a corresponding hint
+ * based on a specified topic and difficulty.
  * It exports the QuestionGenerationInput and QuestionGenerationOutput types, as well as the
  * generateQuestion function to call the flow.
  */
@@ -21,6 +22,7 @@ export type QuestionGenerationInput = z.infer<typeof QuestionGenerationInputSche
 
 const QuestionGenerationOutputSchema = z.object({
   question: z.string().describe('The generated coding question.'),
+  hint: z.string().describe('A concise, actionable hint for the generated question. It should guide the user without giving away the solution.'),
 });
 export type QuestionGenerationOutput = z.infer<typeof QuestionGenerationOutputSchema>;
 
@@ -32,14 +34,17 @@ const generateQuestionPrompt = ai.definePrompt({
   name: 'generateQuestionPrompt',
   input: {schema: QuestionGenerationInputSchema},
   output: {schema: QuestionGenerationOutputSchema},
-  prompt: `You are an AI expert in generating coding questions for different skill levels.
+  prompt: `You are an AI expert in generating coding questions and helpful hints for different skill levels.
 
-  Based on the topic and difficulty level provided, generate a coding question.
+  Based on the topic and difficulty level provided, generate:
+  1. A coding question.
+  2. A single, concise, actionable hint for that question. The hint should help the user identify a key concept, suggest a general approach, or point towards a relevant language feature or pitfall. **Crucially, the hint must not give away the direct solution or include any code snippets.** Focus on guiding the user's thinking process.
 
   Topic: {{{topic}}}
   Difficulty: {{{difficulty}}}
 
-  Question:`, // The LLM will generate the question here
+  Provide the question and the hint.
+  `,
 });
 
 const generateQuestionFlow = ai.defineFlow(
