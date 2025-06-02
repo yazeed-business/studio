@@ -7,6 +7,7 @@ import { AppFooter } from "@/components/layout/app-footer";
 import { DifficultySelector } from "@/components/code-crafter/difficulty-selector";
 import { TopicSelector } from "@/components/code-crafter/topic-selector";
 import { ChallengeDisplay } from "@/components/code-crafter/challenge-display";
+import { QuestionTypeSelector, type QuestionTypePreference } from "@/components/code-crafter/question-type-selector";
 import { CodeEditorPanel } from "@/components/code-crafter/code-editor-panel";
 import { ConceptualAnswerPanel } from "@/components/code-crafter/conceptual-answer-panel";
 import { GradingResults } from "@/components/code-crafter/grading-results";
@@ -23,6 +24,7 @@ type QuestionType = "coding" | "conceptual" | null;
 export default function CodeCrafterPage() {
   const [difficulty, setDifficulty] = useState<Difficulty | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const [questionTypePreference, setQuestionTypePreference] = useState<QuestionTypePreference>("both");
   
   const [question, setQuestion] = useState<string | null>(null);
   const [questionType, setQuestionType] = useState<QuestionType>(null);
@@ -49,17 +51,27 @@ export default function CodeCrafterPage() {
     setError(null);
   }, []);
 
-  const fetchQuestionForChallenge = useCallback(async (currentTopic: string, currentDifficulty: Difficulty) => {
-    if (!currentTopic?.trim() || !currentDifficulty) {
+  const fetchQuestionForChallenge = useCallback(async (
+    currentTopic: string, 
+    currentDifficulty: Difficulty, 
+    currentPreference: QuestionTypePreference
+  ) => {
+    if (!currentTopic?.trim() || !currentDifficulty || !currentPreference) {
       resetQuestionAndRelatedState();
       return;
     }
 
     setIsLoadingQuestion(true);
-    resetQuestionAndRelatedState(); // Clear previous question state first
+    resetQuestionAndRelatedState(); 
+
+    const preferredTypeForApi = currentPreference === "both" ? "any" : currentPreference;
 
     try {
-      const questionInput: QuestionGenerationInput = { topic: currentTopic, difficulty: currentDifficulty };
+      const questionInput: QuestionGenerationInput = { 
+        topic: currentTopic, 
+        difficulty: currentDifficulty, 
+        preferredQuestionType: preferredTypeForApi 
+      };
       const questionOutput: QuestionGenerationOutput = await generateQuestion(questionInput);
       setQuestion(questionOutput.question);
       setCurrentHint(questionOutput.hint);
@@ -77,20 +89,28 @@ export default function CodeCrafterPage() {
   const handleDifficultyChange = useCallback((newDifficulty: Difficulty) => {
     setDifficulty(newDifficulty);
     resetQuestionAndRelatedState();
-    if (selectedTopic && newDifficulty) {
-      fetchQuestionForChallenge(selectedTopic, newDifficulty);
+    if (selectedTopic && newDifficulty && questionTypePreference) {
+      fetchQuestionForChallenge(selectedTopic, newDifficulty, questionTypePreference);
     }
-  }, [selectedTopic, fetchQuestionForChallenge, resetQuestionAndRelatedState]);
+  }, [selectedTopic, questionTypePreference, fetchQuestionForChallenge, resetQuestionAndRelatedState]);
 
   const handleTopicChange = useCallback((newTopic: string) => {
     setSelectedTopic(newTopic);
     resetQuestionAndRelatedState();
-    if (newTopic?.trim() && difficulty) {
-      fetchQuestionForChallenge(newTopic, difficulty);
+    if (newTopic?.trim() && difficulty && questionTypePreference) {
+      fetchQuestionForChallenge(newTopic, difficulty, questionTypePreference);
     } else if (!newTopic?.trim()){
       resetQuestionAndRelatedState();
     }
-  }, [difficulty, fetchQuestionForChallenge, resetQuestionAndRelatedState]);
+  }, [difficulty, questionTypePreference, fetchQuestionForChallenge, resetQuestionAndRelatedState]);
+
+  const handleQuestionTypePreferenceChange = useCallback((newPreference: QuestionTypePreference) => {
+    setQuestionTypePreference(newPreference);
+    resetQuestionAndRelatedState();
+    if (selectedTopic && difficulty && newPreference) {
+      fetchQuestionForChallenge(selectedTopic, difficulty, newPreference);
+    }
+  }, [selectedTopic, difficulty, fetchQuestionForChallenge, resetQuestionAndRelatedState]);
 
   const handleSubmitChallenge = async () => {
     if (!selectedTopic || !difficulty || !question || !questionType) {
@@ -142,7 +162,7 @@ export default function CodeCrafterPage() {
     <div className="flex flex-col min-h-screen bg-background text-foreground font-body">
       <AppHeader />
       <main className="flex-grow container mx-auto px-4 py-8 space-y-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <DifficultySelector
             selectedDifficulty={difficulty}
             onDifficultyChange={handleDifficultyChange}
@@ -151,6 +171,11 @@ export default function CodeCrafterPage() {
           <TopicSelector
             currentTopic={selectedTopic}
             onTopicChange={handleTopicChange}
+            disabled={isSelectorDisabled}
+          />
+          <QuestionTypeSelector
+            selectedPreference={questionTypePreference}
+            onPreferenceChange={handleQuestionTypePreferenceChange}
             disabled={isSelectorDisabled}
           />
         </div>
