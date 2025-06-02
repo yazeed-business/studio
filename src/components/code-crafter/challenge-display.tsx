@@ -5,11 +5,15 @@ import type { FC } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Lightbulb, HelpCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Lightbulb, HelpCircle, Puzzle, BookOpen } from "lucide-react";
+
+type QuestionType = "coding" | "conceptual" | null;
 
 interface ChallengeDisplayProps {
   topic: string | null;
   question: string | null;
+  questionType: QuestionType;
   isLoadingQuestion: boolean;
   questionHint: string | null;
   isQuestionAvailable: boolean;
@@ -18,23 +22,43 @@ interface ChallengeDisplayProps {
 export const ChallengeDisplay: FC<ChallengeDisplayProps> = ({
   topic,
   question,
+  questionType,
   isLoadingQuestion,
   questionHint,
   isQuestionAvailable,
 }) => {
+  const getTitleIcon = () => {
+    if (questionType === 'coding') return <Puzzle className="mr-2 h-6 w-6 text-primary" />;
+    if (questionType === 'conceptual') return <BookOpen className="mr-2 h-6 w-6 text-primary" />;
+    return <Lightbulb className="mr-2 h-6 w-6 text-primary" />;
+  };
+
+  const getTitleText = () => {
+    if (questionType === 'coding') return 'Your Coding Challenge';
+    if (questionType === 'conceptual') return 'Your Conceptual Question';
+    return 'Your Challenge';
+  };
+
+
   return (
     <Card className="shadow-lg h-full">
       <CardHeader>
         <CardTitle className="font-headline text-xl flex items-center">
-          <Lightbulb className="mr-2 h-6 w-6 text-primary" /> Your Coding Challenge
+          {getTitleIcon()} {getTitleText()}
         </CardTitle>
+          {questionType && !isLoadingQuestion && (
+            <Badge variant="outline" className="w-fit mt-1">
+              {questionType === 'coding' ? 'Type: Coding' : 'Type: Conceptual'}
+            </Badge>
+          )}
       </CardHeader>
       <CardContent className="space-y-6">
         <div>
           <h3 className="text-lg font-semibold mb-2 flex items-center">
              <HelpCircle className="mr-2 h-5 w-5 text-accent" /> Topic:
           </h3>
-          {topic ? (
+          {isLoadingQuestion && !topic ? ( <Skeleton className="h-5 w-3/4" /> ) 
+          : topic ? (
             <CardDescription className="text-base">{topic}</CardDescription>
           ) : (
             <CardDescription className="text-base text-muted-foreground">Select a difficulty and topic to generate a challenge.</CardDescription>
@@ -58,7 +82,7 @@ export const ChallengeDisplay: FC<ChallengeDisplayProps> = ({
           )}
         </div>
 
-        {isQuestionAvailable && questionHint && (
+        {isQuestionAvailable && questionHint && !isLoadingQuestion && (
           <div className="mt-4 pt-4 border-t border-border">
             <Accordion type="single" collapsible className="w-full">
               <AccordionItem value="hint">
