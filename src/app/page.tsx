@@ -12,6 +12,7 @@ import { GradingResults } from "@/components/code-crafter/grading-results";
 import { useToast } from "@/hooks/use-toast";
 import { generateQuestion, type QuestionGenerationInput, type QuestionGenerationOutput } from "@/ai/flows/question-generation";
 import { gradeCode, type GradeCodeInput, type GradeCodeOutput } from "@/ai/flows/code-grading";
+import { generateHint, type GenerateHintInput, type GenerateHintOutput } from "@/ai/flows/tip-generation";
 import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
@@ -23,10 +24,14 @@ export default function CodeCrafterPage() {
   const [question, setQuestion] = useState<string | null>(null);
   const [code, setCode] = useState<string>("");
   const [gradingResult, setGradingResult] = useState<GradeCodeOutput | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
 
   const [isLoadingQuestion, setIsLoadingQuestion] = useState<boolean>(false);
   const [isSubmittingCode, setIsSubmittingCode] = useState<boolean>(false);
+  const [isLoadingHint, setIsLoadingHint] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [hintError, setHintError] = useState<string | null>(null);
+
 
   const { toast } = useToast();
 
@@ -35,12 +40,13 @@ export default function CodeCrafterPage() {
     setCode("");
     setGradingResult(null);
     setError(null);
+    setHint(null);
+    setHintError(null);
   }, []);
 
   const fetchQuestionForChallenge = useCallback(async (currentTopic: string, currentDifficulty: Difficulty) => {
     if (!currentTopic?.trim() || !currentDifficulty) {
-      // If topic is empty or only whitespace, don't fetch.
-      setQuestion(null); // Clear any existing question
+      setQuestion(null); 
       return;
     }
 
@@ -49,6 +55,8 @@ export default function CodeCrafterPage() {
     setQuestion(null); 
     setCode(""); 
     setGradingResult(null); 
+    setHint(null);
+    setHintError(null);
 
     try {
       const questionInput: QuestionGenerationInput = { topic: currentTopic, difficulty: currentDifficulty };
@@ -75,11 +83,10 @@ export default function CodeCrafterPage() {
   const handleTopicChange = useCallback((newTopic: string) => {
     setSelectedTopic(newTopic);
     resetQuestionAndRelatedState();
-    // Only fetch if newTopic is not empty or just whitespace
     if (newTopic?.trim() && difficulty) {
       fetchQuestionForChallenge(newTopic, difficulty);
     } else if (!newTopic?.trim()){
-      setQuestion(null); // Clear question if topic is cleared or empty
+      setQuestion(null); 
     }
   }, [difficulty, fetchQuestionForChallenge, resetQuestionAndRelatedState]);
 
@@ -109,6 +116,31 @@ export default function CodeCrafterPage() {
       toast({ variant: "destructive", title: "Error", description: "Failed to grade your code." });
     } finally {
       setIsSubmittingCode(false);
+    }
+  };
+  
+  const handleGetHint = async () => {
+    if (!question || !selectedTopic || !difficulty) {
+      setHintError("Cannot generate a hint without a question, topic, and difficulty.");
+      toast({ variant: "destructive", title: "Hint Error", description: "Missing information for hint." });
+      return;
+    }
+
+    setIsLoadingHint(true);
+    setHint(null);
+    setHintError(null);
+
+    try {
+      const hintInput: GenerateHintInput = { question, topic: selectedTopic, difficulty };
+      const hintOutput: GenerateHintOutput = await generateHint(hintInput);
+      setHint(hintOutput.hint);
+      toast({ title: "Hint Generated!", description: "A hint is now available."});
+    } catch (err) {
+      console.error("Error generating hint:", err);
+      setHintError("Failed to generate a hint. Please try again.");
+      toast({ variant: "destructive", title: "Hint Generation Error", description: "Could not generate a hint." });
+    } finally {
+      setIsLoadingHint(false);
     }
   };
 
@@ -147,6 +179,11 @@ export default function CodeCrafterPage() {
               topic={selectedTopic}
               question={question}
               isLoadingQuestion={isLoadingQuestion}
+              hint={hint}
+              isLoadingHint={isLoadingHint}
+              hintError={hintError}
+              onGetHint={handleGetHint}
+              isQuestionAvailable={!!question && !!selectedTopic && !!difficulty}
             />
           </section>
           
