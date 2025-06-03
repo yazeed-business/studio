@@ -35,6 +35,7 @@ function HistoryPageContent() {
       const fetchHistory = async () => {
         setIsLoadingHistory(true);
         setError(null);
+        console.log("[FETCH_HISTORY_ATTEMPT] Fetching history for user:", user.uid);
         try {
           const historyCollectionRef = collection(db, "challengeHistory");
           const q = query(
@@ -45,19 +46,33 @@ function HistoryPageContent() {
           const querySnapshot = await getDocs(q);
           const entries: ChallengeHistoryEntry[] = [];
           querySnapshot.forEach((doc) => {
+            console.log("[FETCH_HISTORY_DOC] Fetched doc:", doc.id, "=>", doc.data());
             entries.push({ id: doc.id, ...doc.data() } as ChallengeHistoryEntry);
           });
           setHistoryEntries(entries);
+          if (entries.length === 0) {
+            console.log("[FETCH_HISTORY_RESULT] No history entries found for this user.");
+          } else {
+            console.log(`[FETCH_HISTORY_RESULT] Fetched ${entries.length} history entries.`);
+          }
         } catch (err) {
-          console.error("Error fetching history:", err);
-          setError("Failed to load your challenge history. Please try again later.");
+          console.error("[FETCH_HISTORY_FIRESTORE_ERROR] Error fetching history from Firestore:", err);
+          let errorMessage = "Failed to load your challenge history. Please try again later.";
+          if (err instanceof Error && (err.message.toLowerCase().includes("missing or insufficient permissions") || err.message.toLowerCase().includes("permission_denied"))) {
+            errorMessage = "History fetch failed due to Firestore permission issues. Please check your security rules.";
+          }
+          setError(errorMessage);
         } finally {
           setIsLoadingHistory(false);
         }
       };
       fetchHistory();
+    } else if (!authLoading) {
+        console.log("[FETCH_HISTORY_SKIP] User not logged in or auth still loading, not fetching history yet.");
+        // Ensure loading state is managed if user is definitively not logged in post-auth check
+        if(!user) setIsLoadingHistory(false); 
     }
-  }, [user]);
+  }, [user, authLoading]);
 
   const formatDate = (timestamp: Timestamp | undefined) => {
     if (!timestamp) return "N/A";
@@ -66,7 +81,7 @@ function HistoryPageContent() {
     });
   };
 
-  if (authLoading || (!user && !authLoading)) {
+  if (authLoading || (!user && !authLoading && isLoadingHistory)) { // Keep showing loader if auth is loading OR if auth is done, no user, but history is still trying to load
     return (
       <main className="flex-grow container mx-auto px-4 py-8 flex items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -90,7 +105,7 @@ function HistoryPageContent() {
           </Button>
         </div>
 
-        {isLoadingHistory && (
+        {isLoadingHistory && ( // This specific loader is for when history is actively being fetched
           <div className="flex justify-center items-center py-10">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
             <p className="ml-4 text-muted-foreground">Fetching your achievements...</p>
@@ -207,3 +222,4 @@ export default function HistoryPage() {
     </Suspense>
   )
 }
+

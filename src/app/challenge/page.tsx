@@ -165,10 +165,26 @@ function ChallengePageContent() {
     currentGradingResult: GradeCodeOutput | AnswerGradingOutput,
     userSolution: string
   ) => {
-    if (!user || !initialTopic || !initialDifficulty || !activeDisplayType || !currentDisplayedQuestion) {
-      console.error("Missing data to save history");
+    if (!user) {
+      console.error("[SAVE_HISTORY_ERROR] User not available, cannot save history.");
+      toast({ variant: "destructive", title: "History Save Error", description: "You must be logged in to save history." });
       return;
     }
+    if (!initialTopic || !initialDifficulty || !activeDisplayType || !currentDisplayedQuestion) {
+      console.error("[SAVE_HISTORY_ERROR] Missing data to save history: Topic, Difficulty, Type, or Question is null.");
+      console.log("[SAVE_HISTORY_DATA] Current values:", { initialTopic, initialDifficulty, activeDisplayType, currentDisplayedQuestionLoaded: !!currentDisplayedQuestion });
+      toast({ variant: "destructive", title: "History Save Error", description: "Cannot save: missing critical challenge details."});
+      return;
+    }
+
+    console.log("[SAVE_HISTORY_ATTEMPT] Attempting to save challenge to history...");
+    console.log("[SAVE_HISTORY_DATA] User ID:", user.uid);
+    console.log("[SAVE_HISTORY_DATA] Topic:", initialTopic);
+    console.log("[SAVE_HISTORY_DATA] Difficulty:", initialDifficulty);
+    console.log("[SAVE_HISTORY_DATA] Question Type:", activeDisplayType);
+    // console.log("[SAVE_HISTORY_DATA] Question:", currentDisplayedQuestion); // Potentially long
+    // console.log("[SAVE_HISTORY_DATA] User Solution:", userSolution); // Potentially long
+    console.log("[SAVE_HISTORY_DATA] Grading Result:", currentGradingResult);
 
     const historyEntry: Omit<ChallengeHistoryEntry, 'id' | 'createdAt'> & { createdAt: any } = {
       userId: user.uid,
@@ -182,11 +198,16 @@ function ChallengePageContent() {
     };
 
     try {
-      await addDoc(collection(db, "challengeHistory"), historyEntry);
-      toast({ title: "Challenge Saved!", description: "Your attempt has been saved to your history." });
+      const docRef = await addDoc(collection(db, "challengeHistory"), historyEntry);
+      console.log("[SAVE_HISTORY_SUCCESS] Challenge history saved with ID: ", docRef.id);
+      toast({ title: "Challenge Saved!", description: "Your attempt has been successfully saved to your history." });
     } catch (e) {
-      console.error("Error adding document: ", e);
-      toast({ variant: "destructive", title: "History Save Error", description: "Could not save your attempt to history." });
+      console.error("[SAVE_HISTORY_FIRESTORE_ERROR] Error adding document to Firestore: ", e);
+      let errorMessage = "Could not save your attempt to history. Please check console for details.";
+      if (e instanceof Error && (e.message.toLowerCase().includes("missing or insufficient permissions") || e.message.toLowerCase().includes("permission_denied"))) {
+        errorMessage = "History save failed due to Firestore permission issues. Please check your security rules.";
+      }
+      toast({ variant: "destructive", title: "History Save Error", description: errorMessage });
     }
   };
 
@@ -230,7 +251,15 @@ function ChallengePageContent() {
       toast({ title: "Grading Complete!", description: result.passed ? "Congratulations, you passed!" : "Keep practicing!", className: result.passed ? "bg-green-500 text-white" : "bg-red-500 text-white" });
       
       if (result.passed && user) {
+        console.log("[SUBMIT_CHALLENGE] Challenge passed and user is logged in. Proceeding to save history.");
         await saveChallengeToHistory(result, currentUserSolution);
+      } else {
+        if (!result.passed) {
+            console.log("[SUBMIT_CHALLENGE] Challenge not passed. History will not be saved.");
+        }
+        if (!user) {
+            console.log("[SUBMIT_CHALLENGE] User not logged in. History will not be saved.");
+        }
       }
 
     } catch (submissionError) {
@@ -464,3 +493,4 @@ export default function ChallengePage() {
     </Suspense>
   )
 }
+
