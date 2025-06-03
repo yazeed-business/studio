@@ -1,7 +1,7 @@
 
 "use client";
 
-import { CodeXml, LogIn, LogOut, UserCircle, Loader2, History } from 'lucide-react';
+import { CodeXml, LogIn, LogOut, UserCircle, Loader2, History, User } from 'lucide-react'; // Added User icon
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -55,6 +55,12 @@ export function AppHeader() {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild className="cursor-pointer">
+                  <Link href="/profile">
+                    <User className="mr-2 h-4 w-4" /> 
+                    <span>My Profile</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild className="cursor-pointer">
                   <Link href="/history">
                     <History className="mr-2 h-4 w-4" />
                     <span>My History</span>
@@ -79,3 +85,4 @@ export function AppHeader() {
     </header>
   );
 }
+
