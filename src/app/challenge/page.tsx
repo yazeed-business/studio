@@ -120,10 +120,21 @@ function ChallengePageContent() {
         setActiveDisplayType("coding"); 
         toast({ title: "Challenges Ready!", description: `Coding and conceptual questions for ${currentTopic} (${currentDifficulty}) generated.`});
       }
-    } catch (questionError) {
+    } catch (questionError: any) {
       console.error("Error generating question(s):", questionError);
-      setError(`Failed to generate question(s) for "${currentTopic}". Please try again or return to the dashboard to select different parameters.`);
-      toast({ variant: "destructive", title: "Question Generation Error", description: `Could not generate question(s) for "${currentTopic}".` });
+      let userErrorMessage = `Failed to generate question(s) for "${currentTopic}". Please try again or return to the dashboard to select different parameters.`;
+      let toastDescription = `Could not generate question(s) for "${currentTopic}".`;
+
+      if (questionError && typeof questionError.message === 'string') {
+        const lowerCaseMessage = questionError.message.toLowerCase();
+        if (lowerCaseMessage.includes('503') || lowerCaseMessage.includes('service unavailable') || lowerCaseMessage.includes('overloaded')) {
+          userErrorMessage = `The AI service seems to be overloaded or temporarily unavailable. This can sometimes be reported as a 503 error. Please try again in a few moments. If the problem persists, consider trying different parameters or checking back later.`;
+          toastDescription = "AI service is currently overloaded. Please try again shortly.";
+        }
+      }
+      
+      setError(userErrorMessage);
+      toast({ variant: "destructive", title: "Question Generation Error", description: toastDescription });
     } finally {
       setIsLoadingQuestion(false);
     }
@@ -163,7 +174,7 @@ function ChallengePageContent() {
   const saveChallengeToHistory = async (
     currentGradingResult: GradeCodeOutput | AnswerGradingOutput,
     userSolution: string,
-    solutionOutput: SolutionGenerationOutput | null
+    solutionOutput: SolutionGenerationOutput | null // Updated to accept this
   ) => {
     if (!user) {
       console.error("[SAVE_HISTORY_ERROR] User not available, cannot save history.");
@@ -196,7 +207,7 @@ function ChallengePageContent() {
       question: currentDisplayedQuestion,
       userSolution: userSolution,
       gradingResult: currentGradingResult,
-      generatedSolution: solutionOutput,
+      generatedSolution: solutionOutput, // Save the generated solution
       createdAt: serverTimestamp(),
     };
 
