@@ -92,12 +92,15 @@ export default function DashboardPage() {
                 selectedDifficulty={difficulty}
                 onDifficultyChange={(newDifficulty) => {
                   setDifficulty(newDifficulty);
+                  // Optionally reset topic if difficulty changes, or let user decide.
+                  // setSelectedTopic(null); 
                 }}
                 disabled={isStartingChallenge} 
               />
               <TopicSelector
                 currentTopic={selectedTopic}
                 onTopicChange={setSelectedTopic}
+                selectedDifficulty={difficulty} // Pass selected difficulty
                 disabled={isStartingChallenge}
               />
               <QuestionTypeSelector

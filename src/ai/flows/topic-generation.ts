@@ -31,7 +31,10 @@ const topicPrompt = ai.definePrompt({
   name: 'topicPrompt',
   input: {schema: TopicGenerationInputSchema},
   output: {schema: TopicGenerationOutputSchema},
-  prompt: `You are a programming tutor. Suggest a relevant programming topic for a user with the following difficulty level: {{{difficulty}}}. The topic should be something that the user can learn and practice.
+  prompt: `You are a programming tutor. Suggest a relevant and specific programming topic suitable for a user with the following difficulty level: {{{difficulty}}}. 
+The topic should be something that the user can learn and practice with coding or conceptual questions. 
+Focus on a single, concrete topic. For example, for 'Beginner' JavaScript, suggest 'JavaScript Array Methods like .map() or .filter()' rather than just 'JavaScript Arrays'.
+For 'Intermediate' Python, suggest 'Python Decorators' or 'Working with JSON in Python' rather than just 'Python Functions'.
 
 Topic:`,
 });
@@ -44,6 +47,9 @@ const generateTopicFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await topicPrompt(input);
-    return output!;
+    if (!output) {
+      throw new Error('Failed to generate a topic.');
+    }
+    return output;
   }
 );
