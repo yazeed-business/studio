@@ -11,11 +11,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, AlertCircle, BookOpen, Code, CalendarDays, ArrowLeft, HistoryIcon } from "lucide-react";
+import { Loader2, AlertCircle, BookOpen, Code, CalendarDays, ArrowLeft, HistoryIcon, Lightbulb } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, getDocs, Timestamp } from "firebase/firestore";
-import type { ChallengeHistoryEntry } from "@/app/challenge/page"; // Reusing the interface
+import type { ChallengeHistoryEntry } from "@/app/challenge/page"; 
 
 function HistoryPageContent() {
   const { user, loading: authLoading } = useAuth();
@@ -69,7 +69,6 @@ function HistoryPageContent() {
       fetchHistory();
     } else if (!authLoading) {
         console.log("[FETCH_HISTORY_SKIP] User not logged in or auth still loading, not fetching history yet.");
-        // Ensure loading state is managed if user is definitively not logged in post-auth check
         if(!user) setIsLoadingHistory(false); 
     }
   }, [user, authLoading]);
@@ -81,7 +80,7 @@ function HistoryPageContent() {
     });
   };
 
-  if (authLoading || (!user && !authLoading && isLoadingHistory)) { // Keep showing loader if auth is loading OR if auth is done, no user, but history is still trying to load
+  if (authLoading || (!user && !authLoading && isLoadingHistory)) { 
     return (
       <main className="flex-grow container mx-auto px-4 py-8 flex items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -105,7 +104,7 @@ function HistoryPageContent() {
           </Button>
         </div>
 
-        {isLoadingHistory && ( // This specific loader is for when history is actively being fetched
+        {isLoadingHistory && ( 
           <div className="flex justify-center items-center py-10">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
             <p className="ml-4 text-muted-foreground">Fetching your achievements...</p>
@@ -154,12 +153,12 @@ function HistoryPageContent() {
                         Completed: {formatDate(entry.createdAt)}
                       </CardDescription>
                     </div>
-                    <div className="flex gap-2">
-                       <Badge variant={entry.gradingResult.passed ? "default" : "destructive"} className={entry.gradingResult.passed ? "bg-green-500" : "bg-red-500"}>
+                    <div className="flex gap-2 flex-wrap justify-end">
+                       <Badge variant={entry.gradingResult.passed ? "default" : "destructive"} className={`${entry.gradingResult.passed ? "bg-green-500" : "bg-red-500"} text-white`}>
                         {entry.gradingResult.passed ? "Passed" : "Failed"} (Score: {entry.gradingResult.score}/100)
                       </Badge>
                       <Badge variant="secondary">{entry.difficulty}</Badge>
-                      <Badge variant="outline">
+                      <Badge variant="outline" className="flex items-center">
                         {entry.questionType === "coding" ? (
                            <Code className="mr-1 h-4 w-4"/>
                         ) : (
@@ -191,6 +190,27 @@ function HistoryPageContent() {
                           <h4 className="font-semibold text-muted-foreground mb-1">AI Feedback:</h4>
                           <p className="text-sm bg-muted/50 p-3 rounded-md whitespace-pre-wrap">{entry.gradingResult.feedback}</p>
                         </div>
+                        {entry.generatedSolution && (
+                           <div className="mt-4 pt-4 border-t">
+                             <h4 className="font-semibold text-muted-foreground mb-2 flex items-center">
+                               <Lightbulb className="mr-2 h-5 w-5 text-accent" /> AI Generated Solution:
+                             </h4>
+                             <div className="space-y-3">
+                               <div>
+                                 <h5 className="font-medium text-sm mb-1">Suggested Solution:</h5>
+                                 {entry.questionType === 'coding' ? (
+                                   <pre className="bg-muted/70 p-3 rounded-md text-sm overflow-x-auto font-code max-h-96"><code>{entry.generatedSolution.solution}</code></pre>
+                                 ) : (
+                                   <p className="text-sm bg-muted/70 p-3 rounded-md whitespace-pre-wrap">{entry.generatedSolution.solution}</p>
+                                 )}
+                               </div>
+                               <div>
+                                 <h5 className="font-medium text-sm mb-1">Explanation:</h5>
+                                 <p className="text-sm bg-muted/70 p-3 rounded-md whitespace-pre-wrap">{entry.generatedSolution.explanation}</p>
+                               </div>
+                             </div>
+                           </div>
+                        )}
                       </AccordionContent>
                     </AccordionItem>
                   </Accordion>

@@ -35,8 +35,7 @@ export interface ChallengeHistoryEntry {
   userSolution: string; // Can be code or text answer
   gradingResult: GradeCodeOutput | AnswerGradingOutput;
   createdAt: Timestamp;
-  // optional, if solution was viewed and we decide to save it
-  // generatedSolution?: SolutionGenerationOutput | null; 
+  generatedSolution?: SolutionGenerationOutput | null;
 }
 
 
@@ -163,7 +162,8 @@ function ChallengePageContent() {
 
   const saveChallengeToHistory = async (
     currentGradingResult: GradeCodeOutput | AnswerGradingOutput,
-    userSolution: string
+    userSolution: string,
+    solutionOutput: SolutionGenerationOutput | null
   ) => {
     if (!user) {
       console.error("[SAVE_HISTORY_ERROR] User not available, cannot save history.");
@@ -185,6 +185,8 @@ function ChallengePageContent() {
     // console.log("[SAVE_HISTORY_DATA] Question:", currentDisplayedQuestion); // Potentially long
     // console.log("[SAVE_HISTORY_DATA] User Solution:", userSolution); // Potentially long
     console.log("[SAVE_HISTORY_DATA] Grading Result:", currentGradingResult);
+    console.log("[SAVE_HISTORY_DATA] Generated Solution to save:", solutionOutput);
+
 
     const historyEntry: Omit<ChallengeHistoryEntry, 'id' | 'createdAt'> & { createdAt: any } = {
       userId: user.uid,
@@ -194,6 +196,7 @@ function ChallengePageContent() {
       question: currentDisplayedQuestion,
       userSolution: userSolution,
       gradingResult: currentGradingResult,
+      generatedSolution: solutionOutput,
       createdAt: serverTimestamp(),
     };
 
@@ -238,28 +241,47 @@ function ChallengePageContent() {
     setSolutionError(null);
     setError(null);
 
+    let finalGradingResult: GradeCodeOutput | AnswerGradingOutput | null = null;
+    let finalGeneratedSolution: SolutionGenerationOutput | null = null;
+
     try {
-      let result: GradeCodeOutput | AnswerGradingOutput;
       if (activeDisplayType === "coding") {
         const gradingInput: GradeCodeInput = { code: currentUserSolution, topic: initialTopic, difficulty: initialDifficulty };
-        result = await gradeCode(gradingInput);
+        finalGradingResult = await gradeCode(gradingInput);
       } else { 
         const gradingInput: AnswerGradingInput = { userAnswer: currentUserSolution, question: currentDisplayedQuestion, topic: initialTopic, difficulty: initialDifficulty };
-        result = await gradeAnswer(gradingInput);
+        finalGradingResult = await gradeAnswer(gradingInput);
       }
-      setGradingResult(result);
-      toast({ title: "Grading Complete!", description: result.passed ? "Congratulations, you passed!" : "Keep practicing!", className: result.passed ? "bg-green-500 text-white" : "bg-red-500 text-white" });
+      setGradingResult(finalGradingResult);
+      toast({ title: "Grading Complete!", description: finalGradingResult.passed ? "Congratulations, you passed!" : "Keep practicing!", className: finalGradingResult.passed ? "bg-green-500 text-white" : "bg-red-500 text-white" });
       
-      if (result.passed && user) {
-        console.log("[SUBMIT_CHALLENGE] Challenge passed and user is logged in. Proceeding to save history.");
-        await saveChallengeToHistory(result, currentUserSolution);
+      if (!finalGradingResult.passed) {
+        setIsLoadingSolution(true);
+        setSolutionError(null);
+        try {
+          const solutionInput: SolutionGenerationInput = {
+            topic: initialTopic,
+            difficulty: initialDifficulty,
+            question: currentDisplayedQuestion,
+            questionType: activeDisplayType,
+          };
+          finalGeneratedSolution = await generateSolution(solutionInput);
+          setGeneratedSolution(finalGeneratedSolution);
+          toast({ title: "Solution Generated", description: "The solution is now available below."});
+        } catch (err) {
+          console.error("Error generating solution:", err);
+          setSolutionError("Failed to generate solution. Please try again.");
+          toast({ variant: "destructive", title: "Solution Error", description: "Could not generate the solution."});
+        } finally {
+          setIsLoadingSolution(false);
+        }
+      }
+      
+      if (user) {
+        console.log("[SUBMIT_CHALLENGE] Attempt complete. Proceeding to save history.");
+        await saveChallengeToHistory(finalGradingResult, currentUserSolution, finalGeneratedSolution);
       } else {
-        if (!result.passed) {
-            console.log("[SUBMIT_CHALLENGE] Challenge not passed. History will not be saved.");
-        }
-        if (!user) {
-            console.log("[SUBMIT_CHALLENGE] User not logged in. History will not be saved.");
-        }
+        console.log("[SUBMIT_CHALLENGE] User not logged in. History will not be saved.");
       }
 
     } catch (submissionError) {
@@ -271,33 +293,6 @@ function ChallengePageContent() {
     }
   };
 
-  const handleShowSolution = async () => {
-    if (!initialTopic || !initialDifficulty || !activeDisplayType || !currentDisplayedQuestion) {
-      setSolutionError("Cannot generate solution: Missing challenge details.");
-      toast({ variant: "destructive", title: "Error", description: "Missing challenge details for solution."});
-      return;
-    }
-    setIsLoadingSolution(true);
-    setSolutionError(null);
-    setGeneratedSolution(null);
-    try {
-      const solutionInput: SolutionGenerationInput = {
-        topic: initialTopic,
-        difficulty: initialDifficulty,
-        question: currentDisplayedQuestion,
-        questionType: activeDisplayType,
-      };
-      const solutionOutput = await generateSolution(solutionInput);
-      setGeneratedSolution(solutionOutput);
-      toast({ title: "Solution Generated", description: "The solution is now available below."});
-    } catch (err) {
-      console.error("Error generating solution:", err);
-      setSolutionError("Failed to generate solution. Please try again.");
-      toast({ variant: "destructive", title: "Solution Error", description: "Could not generate the solution."});
-    } finally {
-      setIsLoadingSolution(false);
-    }
-  };
 
   const handleRestartChallenge = () => {
     if (initialTopic && initialDifficulty && initialPreference) {
@@ -306,7 +301,7 @@ function ChallengePageContent() {
   };
 
   const handleSwitchActiveDisplayType = (newType: ActiveDisplayType) => {
-    resetChallengeState(false); // Reset only submission related states, not full challenge data
+    resetChallengeState(false); 
     setActiveDisplayType(newType);
   };
   
@@ -451,15 +446,11 @@ function ChallengePageContent() {
                 <h2 id="feedback-heading" className="sr-only">Grading Feedback</h2>
                 <GradingResults
                   result={gradingResult}
-                  isLoading={isSubmittingChallenge}
-                  onShowSolution={handleShowSolution}
+                  isLoading={isSubmittingChallenge || (gradingResult && !gradingResult.passed && isLoadingSolution)}
                   generatedSolution={generatedSolution}
-                  isLoadingSolution={isLoadingSolution}
+                  isLoadingSolution={isLoadingSolution} 
                   solutionError={solutionError}
-                  question={currentDisplayedQuestion} 
-                  topic={initialTopic} 
-                  difficulty={initialDifficulty} 
-                  questionType={activeDisplayType} 
+                  questionType={activeDisplayType}
                 />
               </section>
             )}
