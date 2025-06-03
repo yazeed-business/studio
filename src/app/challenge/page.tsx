@@ -19,20 +19,22 @@ import { AlertCircle, Code, MessageCircle, Home, RotateCcw, Loader2 } from "luci
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp, Timestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs,getCountFromServer } from "firebase/firestore";
+import { ACHIEVEMENTS_LIST, type Achievement, type UserAchievement } from "@/lib/achievements";
+
 
 type Difficulty = "Beginner" | "Intermediate" | "Advanced";
 type QuestionTypePreference = "coding" | "conceptual" | "both";
 type ActiveDisplayType = "coding" | "conceptual";
 
 export interface ChallengeHistoryEntry {
-  id?: string; // Firestore ID, added after fetch
+  id?: string; 
   userId: string;
   topic: string;
   difficulty: Difficulty;
   questionType: ActiveDisplayType;
   question: string;
-  userSolution: string; // Can be code or text answer
+  userSolution: string; 
   gradingResult: GradeCodeOutput | AnswerGradingOutput;
   createdAt: Timestamp;
   generatedSolution?: SolutionGenerationOutput | null;
@@ -171,10 +173,72 @@ function ChallengePageContent() {
     return activeDisplayType === 'coding' ? challengeData.codingHint : challengeData.conceptualHint;
   }, [challengeData, activeDisplayType]);
 
+
+  const checkAndAwardAchievements = async (userId: string, newlySavedHistoryEntry: ChallengeHistoryEntry) => {
+    if (!newlySavedHistoryEntry.gradingResult.passed) return;
+
+    const userAchievementsRef = collection(db, "userAchievements");
+    const passedChallengeDifficulty = newlySavedHistoryEntry.difficulty;
+
+    // 1. Initiate Programmer (First Passed Challenge)
+    const initiateProgrammerAchievement = ACHIEVEMENTS_LIST.find(a => a.id === 'initiate_programmer')!;
+    const historyQuery = query(collection(db, "challengeHistory"), where("userId", "==", userId), where("gradingResult.passed", "==", true));
+    const historySnapshot = await getDocs(historyQuery);
+    
+    if (historySnapshot.size === 1) { // The one just saved is the first passed one
+        const existingAchievementQuery = query(userAchievementsRef, where("userId", "==", userId), where("achievementId", "==", initiateProgrammerAchievement.id));
+        const existingAchievementSnapshot = await getDocs(existingAchievementQuery);
+        if (existingAchievementSnapshot.empty) {
+            await addDoc(userAchievementsRef, {
+                userId,
+                achievementId: initiateProgrammerAchievement.id,
+                name: initiateProgrammerAchievement.name,
+                description: initiateProgrammerAchievement.description,
+                iconName: initiateProgrammerAchievement.iconName,
+                earnedAt: serverTimestamp(),
+            });
+            toast({ title: "Badge Unlocked!", description: `You've earned: ${initiateProgrammerAchievement.name}` });
+            console.log(`[ACHIEVEMENT_AWARDED] User ${userId} earned ${initiateProgrammerAchievement.name}`);
+        }
+    }
+
+    // 2. [Difficulty] Challenger (e.g., Passed 3 at Beginner)
+    const difficultyAchievements = ACHIEVEMENTS_LIST.filter(ach => ach.criteriaDifficulty && ach.criteriaCount);
+    for (const achievement of difficultyAchievements) {
+        if (achievement.criteriaDifficulty === passedChallengeDifficulty && achievement.criteriaCount) {
+            const difficultyHistoryQuery = query(collection(db, "challengeHistory"),
+                where("userId", "==", userId),
+                where("difficulty", "==", passedChallengeDifficulty),
+                where("gradingResult.passed", "==", true)
+            );
+            const difficultyHistorySnapshot = await getCountFromServer(difficultyHistoryQuery);
+            const passedCount = difficultyHistorySnapshot.data().count;
+
+            if (passedCount === achievement.criteriaCount) {
+                const existingAchievementQuery = query(userAchievementsRef, where("userId", "==", userId), where("achievementId", "==", achievement.id));
+                const existingAchievementSnapshot = await getDocs(existingAchievementQuery);
+                if (existingAchievementSnapshot.empty) {
+                     await addDoc(userAchievementsRef, {
+                        userId,
+                        achievementId: achievement.id,
+                        name: achievement.name,
+                        description: achievement.description,
+                        iconName: achievement.iconName,
+                        earnedAt: serverTimestamp(),
+                    });
+                    toast({ title: "Badge Unlocked!", description: `You've earned: ${achievement.name}` });
+                    console.log(`[ACHIEVEMENT_AWARDED] User ${userId} earned ${achievement.name}`);
+                }
+            }
+        }
+    }
+  };
+
+
   const saveChallengeToHistory = async (
     currentGradingResult: GradeCodeOutput | AnswerGradingOutput,
     userSolution: string,
-    solutionOutput: SolutionGenerationOutput | null // Updated to accept this
+    solutionOutput: SolutionGenerationOutput | null 
   ) => {
     if (!user) {
       console.error("[SAVE_HISTORY_ERROR] User not available, cannot save history.");
@@ -189,17 +253,8 @@ function ChallengePageContent() {
     }
 
     console.log("[SAVE_HISTORY_ATTEMPT] Attempting to save challenge to history...");
-    console.log("[SAVE_HISTORY_DATA] User ID:", user.uid);
-    console.log("[SAVE_HISTORY_DATA] Topic:", initialTopic);
-    console.log("[SAVE_HISTORY_DATA] Difficulty:", initialDifficulty);
-    console.log("[SAVE_HISTORY_DATA] Question Type:", activeDisplayType);
-    // console.log("[SAVE_HISTORY_DATA] Question:", currentDisplayedQuestion); // Potentially long
-    // console.log("[SAVE_HISTORY_DATA] User Solution:", userSolution); // Potentially long
-    console.log("[SAVE_HISTORY_DATA] Grading Result:", currentGradingResult);
-    console.log("[SAVE_HISTORY_DATA] Generated Solution to save:", solutionOutput);
-
-
-    const historyEntry: Omit<ChallengeHistoryEntry, 'id' | 'createdAt'> & { createdAt: any } = {
+    
+    const historyEntryData: Omit<ChallengeHistoryEntry, 'id' | 'createdAt'> & { createdAt: any } = {
       userId: user.uid,
       topic: initialTopic,
       difficulty: initialDifficulty,
@@ -207,14 +262,29 @@ function ChallengePageContent() {
       question: currentDisplayedQuestion,
       userSolution: userSolution,
       gradingResult: currentGradingResult,
-      generatedSolution: solutionOutput, // Save the generated solution
+      generatedSolution: solutionOutput, 
       createdAt: serverTimestamp(),
     };
 
     try {
-      const docRef = await addDoc(collection(db, "challengeHistory"), historyEntry);
+      const docRef = await addDoc(collection(db, "challengeHistory"), historyEntryData);
       console.log("[SAVE_HISTORY_SUCCESS] Challenge history saved with ID: ", docRef.id);
       toast({ title: "Challenge Saved!", description: "Your attempt has been successfully saved to your history." });
+      
+      // After saving, check for achievements
+      // We need to create a temporary ChallengeHistoryEntry object with the Timestamp resolved for checkAndAwardAchievements
+      // Firestore typically returns serverTimestamp() as null on the client immediately after write,
+      // so we use a client-side current date for the purpose of achievement checking.
+      // The actual 'createdAt' in DB will be the server's timestamp.
+      const tempHistoryEntryForAchievementCheck: ChallengeHistoryEntry = {
+        ...historyEntryData,
+        id: docRef.id,
+        createdAt: Timestamp.now() // Use client-side timestamp for immediate check
+      };
+      if (currentGradingResult.passed) {
+        await checkAndAwardAchievements(user.uid, tempHistoryEntryForAchievementCheck);
+      }
+
     } catch (e) {
       console.error("[SAVE_HISTORY_FIRESTORE_ERROR] Error adding document to Firestore: ", e);
       let errorMessage = "Could not save your attempt to history. Please check console for details.";
@@ -495,4 +565,3 @@ export default function ChallengePage() {
     </Suspense>
   )
 }
-

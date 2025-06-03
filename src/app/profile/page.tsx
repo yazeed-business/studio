@@ -12,11 +12,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, AlertCircle, User as UserIcon, BarChart2, Activity, TrendingUp, ArrowLeft, BookOpen, Code, CalendarDays } from "lucide-react";
+import { Loader2, AlertCircle, User as UserIcon, BarChart2, Activity, TrendingUp, ArrowLeft, Award, Shield, Trophy } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, getDocs, Timestamp } from "firebase/firestore";
-import type { ChallengeHistoryEntry } from "@/app/challenge/page"; // Assuming this is the correct path and definition
+import type { ChallengeHistoryEntry } from "@/app/challenge/page"; 
+import type { UserAchievement } from "@/lib/achievements";
+import DynamicLucideIcon from "@/components/dynamic-lucide-icon"; 
 
 interface TopicPerformance {
   name: string;
@@ -70,7 +72,6 @@ function calculateAggregatedStats(history: ChallengeHistoryEntry[]): AggregatedS
       totalPassed++;
     }
 
-    // Update challenge dates
     if (entry.createdAt) {
         if (!firstChallengeDate || entry.createdAt.toMillis() < firstChallengeDate.toMillis()) {
             firstChallengeDate = entry.createdAt;
@@ -80,14 +81,12 @@ function calculateAggregatedStats(history: ChallengeHistoryEntry[]): AggregatedS
         }
     }
 
-    // Topic performance
     const topicData = topicMap.get(entry.topic) || { attempts: 0, passed: 0, dates: [] };
     topicData.attempts++;
     if (entry.gradingResult.passed) topicData.passed++;
     if (entry.createdAt) topicData.dates.push(entry.createdAt);
     topicMap.set(entry.topic, topicData);
 
-    // Difficulty performance
     const diffData = difficultyMap.get(entry.difficulty) || { attempts: 0, passed: 0 };
     diffData.attempts++;
     if (entry.gradingResult.passed) diffData.passed++;
@@ -129,7 +128,8 @@ function ProfilePageContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [historyEntries, setHistoryEntries] = useState<ChallengeHistoryEntry[]>([]);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [achievements, setAchievements] = useState<UserAchievement[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(true); // Combined loading state
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -140,32 +140,48 @@ function ProfilePageContent() {
 
   useEffect(() => {
     if (user) {
-      const fetchHistory = async () => {
-        setIsLoadingHistory(true);
+      const fetchData = async () => {
+        setIsLoadingData(true);
         setError(null);
         try {
+          // Fetch History
           const historyCollectionRef = collection(db, "challengeHistory");
-          const q = query(
+          const historyQuery = query(
             historyCollectionRef,
             where("userId", "==", user.uid),
             orderBy("createdAt", "desc")
           );
-          const querySnapshot = await getDocs(q);
+          const historySnapshot = await getDocs(historyQuery);
           const entries: ChallengeHistoryEntry[] = [];
-          querySnapshot.forEach((doc) => {
+          historySnapshot.forEach((doc) => {
             entries.push({ id: doc.id, ...doc.data() } as ChallengeHistoryEntry);
           });
           setHistoryEntries(entries);
+
+          // Fetch Achievements
+          const achievementsCollectionRef = collection(db, "userAchievements");
+          const achievementsQuery = query(
+            achievementsCollectionRef,
+            where("userId", "==", user.uid),
+            orderBy("earnedAt", "desc")
+          );
+          const achievementsSnapshot = await getDocs(achievementsQuery);
+          const earnedAchievements: UserAchievement[] = [];
+          achievementsSnapshot.forEach((doc) => {
+            earnedAchievements.push({ id: doc.id, ...doc.data() } as UserAchievement);
+          });
+          setAchievements(earnedAchievements);
+
         } catch (err) {
-          console.error("Error fetching history for profile:", err);
+          console.error("Error fetching profile data:", err);
           setError("Failed to load your profile data. Please try again later.");
         } finally {
-          setIsLoadingHistory(false);
+          setIsLoadingData(false);
         }
       };
-      fetchHistory();
+      fetchData();
     } else if (!authLoading) {
-      setIsLoadingHistory(false);
+      setIsLoadingData(false);
     }
   }, [user, authLoading]);
 
@@ -177,7 +193,7 @@ function ProfilePageContent() {
     return timestamp.toDate().toLocaleDateString('en-US', options || defaultOptions);
   };
 
-  if (authLoading || (!user && isLoadingHistory)) {
+  if (authLoading || (!user && isLoadingData)) {
     return (
       <main className="flex-grow container mx-auto px-4 py-8 flex items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -201,14 +217,14 @@ function ProfilePageContent() {
           </Button>
         </div>
 
-        {isLoadingHistory && (
+        {isLoadingData && (
           <div className="flex justify-center items-center py-10">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
             <p className="ml-4 text-muted-foreground">Analyzing your journey...</p>
           </div>
         )}
 
-        {error && !isLoadingHistory && (
+        {error && !isLoadingData && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Error Loading Profile</AlertTitle>
@@ -216,14 +232,14 @@ function ProfilePageContent() {
           </Alert>
         )}
 
-        {!isLoadingHistory && !error && aggregatedStats.totalAttempts === 0 && (
+        {!isLoadingData && !error && aggregatedStats.totalAttempts === 0 && achievements.length === 0 && (
           <Card className="text-center py-10 shadow-lg">
             <CardHeader>
               <CardTitle className="text-2xl">Your Profile is Ready!</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-muted-foreground">
-                It looks like you haven't attempted any challenges yet.
+                It looks like you haven't attempted any challenges or earned badges yet.
               </p>
               <p className="text-muted-foreground">
                 Your progress and stats will appear here once you start learning.
@@ -237,115 +253,146 @@ function ProfilePageContent() {
           </Card>
         )}
 
-        {!isLoadingHistory && !error && aggregatedStats.totalAttempts > 0 && (
+        {!isLoadingData && !error && (aggregatedStats.totalAttempts > 0 || achievements.length > 0) && (
           <div className="space-y-8">
-            <Card className="shadow-xl overflow-hidden">
-              <CardHeader className="bg-muted/30">
-                <CardTitle className="font-headline text-2xl flex items-center">
-                  <BarChart2 className="mr-3 h-7 w-7 text-primary" /> Overall Performance
-                </CardTitle>
-                <CardDescription>
-                  Since {formatDate(aggregatedStats.firstChallengeDate)} until {formatDate(aggregatedStats.lastChallengeDate)}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="flex flex-col items-center p-4 bg-card rounded-lg shadow-md">
-                  <h3 className="text-4xl font-bold text-primary">{aggregatedStats.totalAttempts}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">Total Attempts</p>
-                </div>
-                <div className="flex flex-col items-center p-4 bg-card rounded-lg shadow-md">
-                  <h3 className="text-4xl font-bold text-green-500">{aggregatedStats.totalPassed}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">Challenges Passed</p>
-                </div>
-                <div className="flex flex-col items-center p-4 bg-card rounded-lg shadow-md">
-                  <h3 className="text-4xl font-bold text-accent">{aggregatedStats.overallPassRate}%</h3>
-                  <p className="text-sm text-muted-foreground mt-1">Overall Pass Rate</p>
-                  <Progress value={aggregatedStats.overallPassRate} className="w-full mt-2 h-2.5" />
-                </div>
-              </CardContent>
-            </Card>
-
+            {/* Achievements Section */}
             <Card className="shadow-xl">
               <CardHeader>
                 <CardTitle className="font-headline text-xl flex items-center">
-                  <Activity className="mr-2 h-6 w-6 text-primary" /> Performance by Topic
+                  <Trophy className="mr-2 h-6 w-6 text-primary" /> My Achievements
                 </CardTitle>
-                <CardDescription>How you're doing in different subject areas.</CardDescription>
+                <CardDescription>Badges you've earned on your learning journey.</CardDescription>
               </CardHeader>
               <CardContent>
-                {aggregatedStats.topicPerformance.length > 0 ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Topic</TableHead>
-                        <TableHead className="text-center">Attempts</TableHead>
-                        <TableHead className="text-center">Passed</TableHead>
-                        <TableHead className="text-right">Pass Rate</TableHead>
-                        <TableHead className="text-right">Last Attempted</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {aggregatedStats.topicPerformance.map(topic => (
-                        <TableRow key={topic.name}>
-                          <TableCell className="font-medium">{topic.name}</TableCell>
-                          <TableCell className="text-center">{topic.attempts}</TableCell>
-                          <TableCell className="text-center text-green-600">{topic.passed}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end">
-                               <span className="mr-2">{topic.passRate}%</span>
-                               <Progress value={topic.passRate} className="w-16 h-2" indicatorClassName={topic.passRate > 70 ? 'bg-green-500' : topic.passRate > 40 ? 'bg-yellow-500' : 'bg-red-500'}/>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right text-muted-foreground text-xs">{formatDate(topic.lastAttempted, { month: 'short', day: 'numeric', year: 'numeric' })}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                {achievements.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {achievements.map(ach => (
+                      <div key={ach.id} className="flex flex-col items-center text-center p-4 border rounded-lg shadow-sm bg-card hover:shadow-md transition-shadow">
+                        <DynamicLucideIcon name={ach.iconName} className="h-12 w-12 text-accent mb-2" />
+                        <h3 className="font-semibold text-md">{ach.name}</h3>
+                        <p className="text-xs text-muted-foreground mt-1">{ach.description}</p>
+                        <p className="text-xs text-muted-foreground mt-2">Earned: {formatDate(ach.earnedAt, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
-                   <p className="text-muted-foreground text-center py-4">No topic-specific data yet.</p>
+                  <p className="text-muted-foreground text-center py-4">No badges earned yet. Keep practicing!</p>
                 )}
               </CardContent>
             </Card>
 
-            <Card className="shadow-xl">
-              <CardHeader>
-                <CardTitle className="font-headline text-xl flex items-center">
-                  <TrendingUp className="mr-2 h-6 w-6 text-primary" /> Performance by Difficulty
-                </CardTitle>
-                <CardDescription>Your success rate across different challenge levels.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                 {aggregatedStats.difficultyPerformance.some(d => d.attempts > 0) ? (
-                    <Table>
+            {/* Performance Stats Section - only if there are attempts */}
+            {aggregatedStats.totalAttempts > 0 && (
+              <>
+                <Card className="shadow-xl overflow-hidden">
+                  <CardHeader className="bg-muted/30">
+                    <CardTitle className="font-headline text-2xl flex items-center">
+                      <BarChart2 className="mr-3 h-7 w-7 text-primary" /> Overall Performance
+                    </CardTitle>
+                    <CardDescription>
+                      Since {formatDate(aggregatedStats.firstChallengeDate)} until {formatDate(aggregatedStats.lastChallengeDate)}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="flex flex-col items-center p-4 bg-card rounded-lg shadow-md">
+                      <h3 className="text-4xl font-bold text-primary">{aggregatedStats.totalAttempts}</h3>
+                      <p className="text-sm text-muted-foreground mt-1">Total Attempts</p>
+                    </div>
+                    <div className="flex flex-col items-center p-4 bg-card rounded-lg shadow-md">
+                      <h3 className="text-4xl font-bold text-green-500">{aggregatedStats.totalPassed}</h3>
+                      <p className="text-sm text-muted-foreground mt-1">Challenges Passed</p>
+                    </div>
+                    <div className="flex flex-col items-center p-4 bg-card rounded-lg shadow-md">
+                      <h3 className="text-4xl font-bold text-accent">{aggregatedStats.overallPassRate}%</h3>
+                      <p className="text-sm text-muted-foreground mt-1">Overall Pass Rate</p>
+                      <Progress value={aggregatedStats.overallPassRate} className="w-full mt-2 h-2.5" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="shadow-xl">
+                  <CardHeader>
+                    <CardTitle className="font-headline text-xl flex items-center">
+                      <Activity className="mr-2 h-6 w-6 text-primary" /> Performance by Topic
+                    </CardTitle>
+                    <CardDescription>How you're doing in different subject areas.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {aggregatedStats.topicPerformance.length > 0 ? (
+                      <Table>
                         <TableHeader>
-                        <TableRow>
-                            <TableHead>Difficulty</TableHead>
+                          <TableRow>
+                            <TableHead>Topic</TableHead>
                             <TableHead className="text-center">Attempts</TableHead>
                             <TableHead className="text-center">Passed</TableHead>
                             <TableHead className="text-right">Pass Rate</TableHead>
-                        </TableRow>
+                            <TableHead className="text-right">Last Attempted</TableHead>
+                          </TableRow>
                         </TableHeader>
                         <TableBody>
-                        {aggregatedStats.difficultyPerformance.filter(d => d.attempts > 0).map(diff => (
-                            <TableRow key={diff.level}>
-                            <TableCell className="font-medium">{diff.level}</TableCell>
-                            <TableCell className="text-center">{diff.attempts}</TableCell>
-                            <TableCell className="text-center text-green-600">{diff.passed}</TableCell>
-                            <TableCell className="text-right">
+                          {aggregatedStats.topicPerformance.map(topic => (
+                            <TableRow key={topic.name}>
+                              <TableCell className="font-medium">{topic.name}</TableCell>
+                              <TableCell className="text-center">{topic.attempts}</TableCell>
+                              <TableCell className="text-center text-green-600">{topic.passed}</TableCell>
+                              <TableCell className="text-right">
                                 <div className="flex items-center justify-end">
-                                    <span className="mr-2">{diff.passRate}%</span>
-                                    <Progress value={diff.passRate} className="w-16 h-2" indicatorClassName={diff.passRate > 70 ? 'bg-green-500' : diff.passRate > 40 ? 'bg-yellow-500' : 'bg-red-500'}/>
+                                  <span className="mr-2">{topic.passRate}%</span>
+                                  <Progress value={topic.passRate} className="w-16 h-2" indicatorClassName={topic.passRate > 70 ? 'bg-green-500' : topic.passRate > 40 ? 'bg-yellow-500' : 'bg-red-500'}/>
                                 </div>
-                            </TableCell>
+                              </TableCell>
+                              <TableCell className="text-right text-muted-foreground text-xs">{formatDate(topic.lastAttempted, { month: 'short', day: 'numeric', year: 'numeric' })}</TableCell>
                             </TableRow>
-                        ))}
+                          ))}
                         </TableBody>
-                    </Table>
-                 ) : (
-                    <p className="text-muted-foreground text-center py-4">No difficulty-specific data yet.</p>
-                 )}
-              </CardContent>
-            </Card>
+                      </Table>
+                    ) : (
+                      <p className="text-muted-foreground text-center py-4">No topic-specific data yet.</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="shadow-xl">
+                  <CardHeader>
+                    <CardTitle className="font-headline text-xl flex items-center">
+                      <TrendingUp className="mr-2 h-6 w-6 text-primary" /> Performance by Difficulty
+                    </CardTitle>
+                    <CardDescription>Your success rate across different challenge levels.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {aggregatedStats.difficultyPerformance.some(d => d.attempts > 0) ? (
+                        <Table>
+                            <TableHeader>
+                            <TableRow>
+                                <TableHead>Difficulty</TableHead>
+                                <TableHead className="text-center">Attempts</TableHead>
+                                <TableHead className="text-center">Passed</TableHead>
+                                <TableHead className="text-right">Pass Rate</TableHead>
+                            </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                            {aggregatedStats.difficultyPerformance.filter(d => d.attempts > 0).map(diff => (
+                                <TableRow key={diff.level}>
+                                <TableCell className="font-medium">{diff.level}</TableCell>
+                                <TableCell className="text-center">{diff.attempts}</TableCell>
+                                <TableCell className="text-center text-green-600">{diff.passed}</TableCell>
+                                <TableCell className="text-right">
+                                    <div className="flex items-center justify-end">
+                                        <span className="mr-2">{diff.passRate}%</span>
+                                        <Progress value={diff.passRate} className="w-16 h-2" indicatorClassName={diff.passRate > 70 ? 'bg-green-500' : diff.passRate > 40 ? 'bg-yellow-500' : 'bg-red-500'}/>
+                                    </div>
+                                </TableCell>
+                                </TableRow>
+                            ))}
+                            </TableBody>
+                        </Table>
+                    ) : (
+                        <p className="text-muted-foreground text-center py-4">No difficulty-specific data yet.</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            )}
           </div>
         )}
       </main>
