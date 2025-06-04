@@ -21,6 +21,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs,getCountFromServer } from "firebase/firestore";
 import { ACHIEVEMENTS_LIST, type UserAchievement } from "@/lib/achievements";
+import { transform } from 'sucrase';
 
 
 type Difficulty = "Beginner" | "Intermediate" | "Advanced";
@@ -389,24 +390,40 @@ function ChallengePageContent() {
     setExecutionError(null);
     setGradingResult(null); // Clear previous AI grading results
 
-    // Simulate async operation for UI feedback
     await new Promise(resolve => setTimeout(resolve, 300)); 
+
+    let executableCode = code;
+    try {
+      // Attempt to transpile TypeScript to JavaScript using Sucrase
+      // This handles TS syntax but not module imports/exports or full type checking.
+      const transpileResult = transform(code, {
+        transforms: ['typescript'],
+        filePath: 'challenge.ts' // filePath can influence some transforms, good to provide
+      });
+      executableCode = transpileResult.code;
+    } catch (transpileError: any) {
+      // If Sucrase fails, it might be very malformed TS or already JS.
+      // We'll set an error and not proceed to execution.
+      console.error("Code transpilation error:", transpileError);
+      setExecutionError(`Transpilation Error: ${transpileError.message}. Ensure your TypeScript syntax is correct. Module imports/exports are not supported in this run environment.`);
+      setIsRunningCode(false);
+      return;
+    }
 
     try {
       const capturedLogs: string[] = [];
       const originalConsoleLog = console.log;
       
-      // Temporarily override console.log to capture outputs
       console.log = (...args: any[]) => {
         capturedLogs.push(args.map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' '));
-        originalConsoleLog.apply(console, args); // Also log to actual console for debugging
+        originalConsoleLog.apply(console, args); 
       };
 
       // eslint-disable-next-line no-new-func
-      const scriptFunction = new Function(code);
+      const scriptFunction = new Function(executableCode);
       const returnValue = scriptFunction();
       
-      console.log = originalConsoleLog; // Restore original console.log
+      console.log = originalConsoleLog; 
 
       let outputString = capturedLogs.join('\n');
       if (returnValue !== undefined) {
@@ -417,9 +434,9 @@ function ChallengePageContent() {
       setExecutionOutput(outputString || "Code executed successfully (no explicit output or return value).");
 
     } catch (err: any) {
-      console.log = window.console.log; // Restore original console.log in case of error
+      console.log = window.console.log; 
       console.error("Error running code:", err);
-      setExecutionError(err.message || "An unknown error occurred during execution.");
+      setExecutionError(`Runtime Error: ${err.message}` || "An unknown error occurred during execution.");
     } finally {
       setIsRunningCode(false);
     }
