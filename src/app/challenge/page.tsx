@@ -21,7 +21,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs,getCountFromServer } from "firebase/firestore";
 import { ACHIEVEMENTS_LIST, type UserAchievement } from "@/lib/achievements";
-import { transform } from 'sucrase';
 
 
 type Difficulty = "Beginner" | "Intermediate" | "Advanced";
@@ -137,8 +136,8 @@ function ChallengePageContent() {
 
       if (questionError && typeof questionError.message === 'string') {
         const lowerCaseMessage = questionError.message.toLowerCase();
-        if (lowerCaseMessage.includes('503') || lowerCaseMessage.includes('service unavailable') || lowerCaseMessage.includes('overloaded')) {
-          userErrorMessage = `The AI service seems to be overloaded or temporarily unavailable. This can sometimes be reported as a 503 error. Please try again in a few moments. If the problem persists, consider trying different parameters or checking back later.`;
+        if (lowerCaseMessage.includes('503') || lowerCaseMessage.includes('service unavailable') || lowerCaseMessage.includes('overloaded') || lowerCaseMessage.includes('model is overloaded')) {
+          userErrorMessage = `The AI service seems to be overloaded or temporarily unavailable. This can sometimes be reported as a 503 error or model overload. Please try again in a few moments. If the problem persists, consider trying different parameters or checking back later.`;
           toastDescription = "AI service is currently overloaded. Please try again shortly.";
         }
       }
@@ -221,7 +220,7 @@ function ChallengePageContent() {
             const difficultyHistorySnapshot = await getCountFromServer(difficultyHistoryQuery);
             const passedCount = difficultyHistorySnapshot.data().count;
 
-            if (passedCount >= achievement.criteriaCount) { // Use >= in case of race conditions or multiple saves
+            if (passedCount >= achievement.criteriaCount) { 
                 const existingAchievementQuery = query(userAchievementsRef, where("userId", "==", userId), where("achievementId", "==", achievement.id));
                 const existingAchievementSnapshot = await getDocs(existingAchievementQuery);
                 if (existingAchievementSnapshot.empty) {
@@ -259,7 +258,7 @@ function ChallengePageContent() {
       return;
     }
 
-    console.log("[SAVE_HISTORY_ATTEMPT] Attempting to save challenge to history with grading:", currentGradingResult);
+    console.log("[SAVE_HISTORY_ATTEMPT] Attempting to save challenge to history. User:", user.uid, "Topic:", initialTopic, "Grading passed:", currentGradingResult.passed);
     
     const historyEntryData: Omit<ChallengeHistoryEntry, 'id' | 'createdAt'> & { createdAt: any } = {
       userId: user.uid,
@@ -341,6 +340,7 @@ function ChallengePageContent() {
       toast({ title: "Grading Complete!", description: finalGradingResult.passed ? "Congratulations, you passed!" : "Keep practicing!", className: finalGradingResult.passed ? "bg-green-500 text-white" : "bg-red-500 text-white" });
       
       if (!finalGradingResult.passed) {
+        console.log("[SOLUTION_GENERATION_START] Challenge failed, attempting to generate solution.");
         setIsLoadingSolution(true);
         setSolutionError(null);
         try {
@@ -353,8 +353,9 @@ function ChallengePageContent() {
           finalGeneratedSolution = await generateSolution(solutionInput);
           setGeneratedSolution(finalGeneratedSolution);
           toast({ title: "Solution Generated", description: "The solution is now available below."});
+          console.log("[SOLUTION_GENERATION_SUCCESS] Solution generated successfully.");
         } catch (err) {
-          console.error("Error generating solution:", err);
+          console.error("[SOLUTION_GENERATION_ERROR] Error generating solution:", err);
           setSolutionError("Failed to generate solution. Please try again.");
           toast({ variant: "destructive", title: "Solution Error", description: "Could not generate the solution."});
         } finally {
@@ -363,10 +364,10 @@ function ChallengePageContent() {
       }
       
       if (user) {
-        console.log("[SUBMIT_CHALLENGE] Attempt complete. Proceeding to save history with grading result:", finalGradingResult);
+        console.log("[SUBMIT_CHALLENGE] Attempt complete. Proceeding to save history. User:", user.uid, "Grading passed:", finalGradingResult.passed);
         await saveChallengeToHistory(finalGradingResult, currentUserSolution, finalGeneratedSolution);
       } else {
-        console.log("[SUBMIT_CHALLENGE] User not logged in. History will not be saved.");
+        console.warn("[SUBMIT_CHALLENGE] User not logged in. History will not be saved.");
       }
 
     } catch (submissionError) {
@@ -392,24 +393,6 @@ function ChallengePageContent() {
 
     await new Promise(resolve => setTimeout(resolve, 300)); 
 
-    let executableCode = code;
-    try {
-      // Attempt to transpile TypeScript to JavaScript using Sucrase
-      // This handles TS syntax but not module imports/exports or full type checking.
-      const transpileResult = transform(code, {
-        transforms: ['typescript'],
-        filePath: 'challenge.ts' // filePath can influence some transforms, good to provide
-      });
-      executableCode = transpileResult.code;
-    } catch (transpileError: any) {
-      // If Sucrase fails, it might be very malformed TS or already JS.
-      // We'll set an error and not proceed to execution.
-      console.error("Code transpilation error:", transpileError);
-      setExecutionError(`Transpilation Error: ${transpileError.message}. Ensure your TypeScript syntax is correct. Module imports/exports are not supported in this run environment.`);
-      setIsRunningCode(false);
-      return;
-    }
-
     try {
       const capturedLogs: string[] = [];
       const originalConsoleLog = console.log;
@@ -420,7 +403,7 @@ function ChallengePageContent() {
       };
 
       // eslint-disable-next-line no-new-func
-      const scriptFunction = new Function(executableCode);
+      const scriptFunction = new Function(code);
       const returnValue = scriptFunction();
       
       console.log = originalConsoleLog; 

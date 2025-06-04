@@ -122,10 +122,10 @@ export const CodeEditorPanel: FC<CodeEditorPanelProps> = ({
           <Textarea
             value={code}
             onChange={handleCodeInputChange}
-            placeholder={disabled ? "Please select a difficulty and generate a challenge first." : "Write your JavaScript or TypeScript code here..."}
+            placeholder={disabled ? "Please select a difficulty and generate a challenge first." : "Write your JavaScript code here..."}
             className="h-full min-h-[200px] font-code text-sm resize-y flex-grow"
             disabled={disabled || isSubmitting || isRunningCode}
-            aria-label="Code Editor for JavaScript or TypeScript"
+            aria-label="Code Editor for JavaScript"
           />
         </CardContent>
         <CardFooter className="flex-col sm:flex-row gap-2 pt-4">
@@ -140,7 +140,7 @@ export const CodeEditorPanel: FC<CodeEditorPanelProps> = ({
             ) : (
               <Play className="mr-2 h-4 w-4" />
             )}
-            {isRunningCode ? "Running..." : "Run Code (JS/TS)"}
+            {isRunningCode ? "Running..." : "Run Code (JS)"}
           </Button>
           <Button
             onClick={onSubmit}
