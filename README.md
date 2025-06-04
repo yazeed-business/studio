@@ -1,28 +1,52 @@
 
 # CodeCrafter: AI-Powered Interactive Learning Platform
 
-CodeCrafter is a Next.js application designed to help users learn software development concepts and coding skills interactively with the assistance of Generative AI. Users can select topics and difficulty levels, receive coding or conceptual questions, submit their answers, and get instant feedback and solutions.
+CodeCrafter is a Next.js application designed to help users learn software development concepts and coding skills interactively with the assistance of Generative AI. Users can select topics and difficulty levels, receive coding or conceptual questions, submit their answers, and get instant feedback, solutions, and track their progress over time.
 
 ## ✨ Features
 
-*   **AI-Powered Question Generation**: Generates coding and conceptual questions based on selected topic and difficulty.
-*   **Topic Suggestion**: AI suggests relevant topics based on chosen difficulty.
+*   **AI-Powered Question Generation**:
+    *   Generates coding and/or conceptual questions based on selected topic and difficulty.
+    *   Provides concise, actionable hints for each question without revealing the direct solution.
+    *   Supports "Coding Only", "Conceptual Only", or "Both Types" for a mixed challenge.
+*   **AI-Driven Topic Suggestion**:
+    *   Users can request an AI-suggested programming topic based on their chosen difficulty level, helping them discover new areas or overcome choice paralysis.
 *   **Interactive Challenge Environment**:
-    *   Dedicated page for attempting challenges.
-    *   Separate input areas for coding and conceptual answers.
-    *   Hints available for questions.
-*   **AI-Driven Grading**:
-    *   Submissions are graded by an AI, providing a score and constructive feedback.
-*   **Solution Generation**: If a user fails a challenge, the AI can provide a correct solution and an explanation.
-*   **User Authentication**: Secure sign-up and sign-in using Firebase Authentication (Email & Password).
-*   **Challenge History**: Logged-in users can view their past challenge attempts, including the question, their solution, AI feedback, and the generated solution if applicable.
-*   **Progress Tracking & Profile Page**:
-    *   Users have a profile page displaying their overall performance statistics.
-    *   Breakdown of performance by topic and difficulty.
+    *   Dedicated challenge page (`/challenge`) dynamically loads questions based on dashboard selections.
+    *   Separate input areas:
+        *   **Code Editor Panel**: For writing and submitting code solutions, with clear, copy, and submit actions.
+        *   **Conceptual Answer Panel**: For typing out textual answers to conceptual questions, with clear, copy, and submit actions.
+    *   Ability to switch between coding and conceptual questions if "Both Types" was selected.
+    *   Option to restart the current challenge with new questions for the same parameters or go back to the dashboard for new parameters.
+*   **AI-Driven Grading & Feedback**:
+    *   **Code Grading**: User-submitted code is evaluated by an AI for correctness, efficiency, and style, providing a score (out of 100) and constructive feedback.
+    *   **Answer Grading**: Textual answers to conceptual questions are graded by an AI for correctness, clarity, and completeness, providing a score and feedback.
+    *   Indicates whether the user passed or failed based on a predefined threshold (e.g., score >= 70).
+*   **AI-Generated Solutions**:
+    *   If a user fails a challenge (coding or conceptual), the AI automatically generates a correct solution and a detailed explanation.
+    *   This solution is displayed immediately on the challenge page and saved with the history entry.
+*   **User Authentication**:
+    *   Secure sign-up and sign-in using Firebase Authentication (Email & Password).
+    *   Protected routes ensure only authenticated users can access the dashboard, challenge page, history, and profile.
+*   **Challenge History & Persistence**:
+    *   All challenge attempts (passed or failed), including the topic, difficulty, question type, question, user's solution, AI grading (score, feedback), and the AI-generated solution (if applicable), are saved to Firestore.
+    *   **History Page (`/history`)**: Logged-in users can view a chronological list of their past challenge attempts.
+        *   Each entry displays key details and allows users to expand an accordion to see the full question, their submitted solution, AI feedback, and the AI-generated solution if available.
+*   **User Profile & Progress Tracking**:
+    *   **Profile Page (`/profile`)**: Logged-in users have a dedicated profile page displaying:
+        *   **Overall Performance Statistics**: Total attempts, total passed, overall pass rate, and date range of activity.
+        *   **Performance by Topic**: A table detailing attempts, passes, pass rate (with a progress bar), and last attempted date for each topic.
+        *   **Performance by Difficulty**: A table detailing attempts, passes, and pass rate (with a progress bar) for Beginner, Intermediate, and Advanced levels.
 *   **Gamification (Badges)**:
-    *   Users earn badges for achievements like passing their first challenge or mastering a certain number of challenges at a specific difficulty.
-    *   Earned badges are displayed on the profile page.
-*   **Responsive UI**: Built with ShadCN UI components and Tailwind CSS for a modern and responsive user experience.
+    *   Users earn badges for various achievements, such as:
+        *   Passing their first challenge ("Initiate Programmer").
+        *   Passing a set number of challenges at specific difficulty levels (e.g., "Beginner Challenger," "Intermediate Adept," "Advanced Virtuoso").
+    *   Earned badges, along with their icons, names, descriptions, and earning dates, are displayed on the user's profile page.
+    *   Achievements are stored in Firestore.
+*   **Responsive & Modern UI**:
+    *   Built with ShadCN UI components and styled with Tailwind CSS for a clean, modern, and responsive user experience across devices.
+    *   Uses toast notifications for user feedback on actions like saving history, earning badges, or encountering errors.
+    *   Custom favicon for brand identity.
 
 ## 🛠️ Tech Stack
 
@@ -32,10 +56,11 @@ CodeCrafter is a Next.js application designed to help users learn software devel
 *   **Styling**: Tailwind CSS
 *   **UI Components**: ShadCN UI
 *   **Generative AI**: Google Gemini models via Genkit
-*   **Backend & Authentication**: Firebase (Auth, Firestore)
-*   **State Management**: React Context API, `useState`, `useEffect`
-*   **Forms**: React Hook Form (implicitly via ShadCN or custom)
-*   **Linting/Formatting**: ESLint, Prettier (assumed, standard for Next.js)
+*   **Backend & Database**: Firebase (Authentication, Firestore)
+*   **State Management**: React Context API (`AuthContext`), `useState`, `useEffect`
+*   **Forms**: React Hook Form (implicitly via ShadCN or custom for simple inputs)
+*   **Routing**: Next.js App Router
+*   **Icons**: Lucide React
 
 ## 🚀 Getting Started
 
@@ -62,7 +87,7 @@ yarn install
 
 ### 3. Set Up Environment Variables
 
-Create a `.env` file in the root of your project by copying `.env.example` (if one exists) or by creating it manually. You'll need to populate it with your Firebase project configuration and any other necessary API keys (like for Google AI Studio if using Genkit with specific keys).
+Create a `.env` file in the root of your project by copying `.env.example` (if one exists) or by creating it manually. You'll need to populate it with your Firebase project configuration.
 
 Example `.env` structure:
 
@@ -74,8 +99,8 @@ NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_firebase_storage_bucket
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_firebase_messaging_sender_id
 NEXT_PUBLIC_FIREBASE_APP_ID=your_firebase_app_id
 
-# For Genkit (if needed directly, though often configured in code/Google Cloud Project)
-# GOOGLE_API_KEY=your_google_ai_studio_api_key
+# Genkit typically uses Google Cloud Project authentication or GOOGLE_API_KEY if set
+# GOOGLE_API_KEY=your_google_ai_studio_api_key 
 ```
 
 ### 4. Firebase Setup
@@ -126,17 +151,18 @@ This typically starts Genkit on `http://localhost:3100`.
 
 ## 📄 Project Structure (Key Directories)
 
-*   `src/app/`: Contains the main pages and layouts (App Router).
+*   `src/app/`: Contains the main pages and layouts (App Router: `/`, `/challenge`, `/login`, `/history`, `/profile`).
 *   `src/ai/`: Genkit AI flows and configuration.
-    *   `flows/`: Individual AI flows (e.g., question generation, grading).
+    *   `flows/`: Individual AI flows (e.g., question generation, grading, solution generation, topic suggestion).
 *   `src/components/`: Reusable UI components.
     *   `ui/`: ShadCN UI components.
-    *   `layout/`: Layout components like Header and Footer.
-    *   `code-crafter/`: Application-specific components for the core CodeCrafter experience.
+    *   `layout/`: Layout components like `AppHeader` and `AppFooter`.
+    *   `code-crafter/`: Application-specific components for the core CodeCrafter experience (e.g., `DifficultySelector`, `ChallengeDisplay`).
+    *   `dynamic-lucide-icon.tsx`: Component to render Lucide icons by name.
 *   `src/contexts/`: React Context providers (e.g., `AuthContext`).
-*   `src/hooks/`: Custom React hooks.
-*   `src/lib/`: Utility functions, Firebase configuration, achievement definitions.
-*   `public/`: Static assets (e.g., images, favicons).
+*   `src/hooks/`: Custom React hooks (e.g., `useToast`, `useIsMobile`).
+*   `src/lib/`: Utility functions, Firebase configuration (`firebase.ts`), achievement definitions (`achievements.ts`).
+*   `public/`: Static assets (e.g., images, `favicon.png`).
 
 ## 🤝 Contributing
 
@@ -144,4 +170,5 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📜 License
 
-This project is licensed under the MIT License - see the LICENSE.md file (if applicable) for details. (Assuming MIT, adjust if different).
+This project is licensed under the MIT License (Assumed - update if different).
+```
