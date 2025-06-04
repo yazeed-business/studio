@@ -20,7 +20,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs,getCountFromServer } from "firebase/firestore";
-import { ACHIEVEMENTS_LIST, type Achievement, type UserAchievement } from "@/lib/achievements";
+import { ACHIEVEMENTS_LIST, type UserAchievement } from "@/lib/achievements";
 
 
 type Difficulty = "Beginner" | "Intermediate" | "Advanced";
@@ -63,9 +63,14 @@ function ChallengePageContent() {
   const [solutionError, setSolutionError] = useState<string | null>(null);
 
   const [isLoadingQuestion, setIsLoadingQuestion] = useState<boolean>(false);
-  const [isSubmittingChallenge, setIsSubmittingChallenge] = useState<boolean>(false);
+  const [isSubmittingChallenge, setIsSubmittingChallenge] = useState<boolean>(false); // For AI Grading
   const [error, setError] = useState<string | null>(null);
   const [hasValidParams, setHasValidParams] = useState<boolean | null>(null);
+
+  // State for client-side code execution
+  const [executionOutput, setExecutionOutput] = useState<string | null>(null);
+  const [executionError, setExecutionError] = useState<string | null>(null);
+  const [isRunningCode, setIsRunningCode] = useState<boolean>(false);
 
 
   useEffect(() => {
@@ -86,6 +91,8 @@ function ChallengePageContent() {
     setGeneratedSolution(null);
     setIsLoadingSolution(false);
     setSolutionError(null);
+    setExecutionOutput(null);
+    setExecutionError(null);
   }, []);
 
   const fetchQuestionForChallenge = useCallback(async (
@@ -185,7 +192,7 @@ function ChallengePageContent() {
     const historyQuery = query(collection(db, "challengeHistory"), where("userId", "==", userId), where("gradingResult.passed", "==", true));
     const historySnapshot = await getDocs(historyQuery);
     
-    if (historySnapshot.size === 1) { // The one just saved is the first passed one
+    if (historySnapshot.size === 1) { 
         const existingAchievementQuery = query(userAchievementsRef, where("userId", "==", userId), where("achievementId", "==", initiateProgrammerAchievement.id));
         const existingAchievementSnapshot = await getDocs(existingAchievementQuery);
         if (existingAchievementSnapshot.empty) {
@@ -202,7 +209,6 @@ function ChallengePageContent() {
         }
     }
 
-    // 2. [Difficulty] Challenger (e.g., Passed 3 at Beginner)
     const difficultyAchievements = ACHIEVEMENTS_LIST.filter(ach => ach.criteriaDifficulty && ach.criteriaCount);
     for (const achievement of difficultyAchievements) {
         if (achievement.criteriaDifficulty === passedChallengeDifficulty && achievement.criteriaCount) {
@@ -214,7 +220,7 @@ function ChallengePageContent() {
             const difficultyHistorySnapshot = await getCountFromServer(difficultyHistoryQuery);
             const passedCount = difficultyHistorySnapshot.data().count;
 
-            if (passedCount === achievement.criteriaCount) {
+            if (passedCount >= achievement.criteriaCount) { // Use >= in case of race conditions or multiple saves
                 const existingAchievementQuery = query(userAchievementsRef, where("userId", "==", userId), where("achievementId", "==", achievement.id));
                 const existingAchievementSnapshot = await getDocs(existingAchievementQuery);
                 if (existingAchievementSnapshot.empty) {
@@ -252,7 +258,7 @@ function ChallengePageContent() {
       return;
     }
 
-    console.log("[SAVE_HISTORY_ATTEMPT] Attempting to save challenge to history...");
+    console.log("[SAVE_HISTORY_ATTEMPT] Attempting to save challenge to history with grading:", currentGradingResult);
     
     const historyEntryData: Omit<ChallengeHistoryEntry, 'id' | 'createdAt'> & { createdAt: any } = {
       userId: user.uid,
@@ -271,15 +277,10 @@ function ChallengePageContent() {
       console.log("[SAVE_HISTORY_SUCCESS] Challenge history saved with ID: ", docRef.id);
       toast({ title: "Challenge Saved!", description: "Your attempt has been successfully saved to your history." });
       
-      // After saving, check for achievements
-      // We need to create a temporary ChallengeHistoryEntry object with the Timestamp resolved for checkAndAwardAchievements
-      // Firestore typically returns serverTimestamp() as null on the client immediately after write,
-      // so we use a client-side current date for the purpose of achievement checking.
-      // The actual 'createdAt' in DB will be the server's timestamp.
       const tempHistoryEntryForAchievementCheck: ChallengeHistoryEntry = {
         ...historyEntryData,
         id: docRef.id,
-        createdAt: Timestamp.now() // Use client-side timestamp for immediate check
+        createdAt: Timestamp.now() 
       };
       if (currentGradingResult.passed) {
         await checkAndAwardAchievements(user.uid, tempHistoryEntryForAchievementCheck);
@@ -295,7 +296,7 @@ function ChallengePageContent() {
     }
   };
 
-  const handleSubmitChallenge = async () => {
+  const handleSubmitChallenge = async () => { // This is for AI Grading
     if (!initialTopic || !initialDifficulty || !activeDisplayType || !currentDisplayedQuestion) {
       setError("Missing information to grade. Ensure topic, difficulty, and question type are set.");
       toast({ variant: "destructive", title: "Error", description: "Cannot submit: Missing critical information." });
@@ -321,6 +322,8 @@ function ChallengePageContent() {
     setGeneratedSolution(null); 
     setSolutionError(null);
     setError(null);
+    setExecutionOutput(null); // Clear execution output when submitting for AI grade
+    setExecutionError(null);
 
     let finalGradingResult: GradeCodeOutput | AnswerGradingOutput | null = null;
     let finalGeneratedSolution: SolutionGenerationOutput | null = null;
@@ -359,7 +362,7 @@ function ChallengePageContent() {
       }
       
       if (user) {
-        console.log("[SUBMIT_CHALLENGE] Attempt complete. Proceeding to save history.");
+        console.log("[SUBMIT_CHALLENGE] Attempt complete. Proceeding to save history with grading result:", finalGradingResult);
         await saveChallengeToHistory(finalGradingResult, currentUserSolution, finalGeneratedSolution);
       } else {
         console.log("[SUBMIT_CHALLENGE] User not logged in. History will not be saved.");
@@ -375,6 +378,54 @@ function ChallengePageContent() {
   };
 
 
+  const handleRunCode = async () => {
+    if (activeDisplayType !== 'coding' || !code.trim()) {
+      setExecutionError("No code to run or not a coding challenge.");
+      setExecutionOutput(null);
+      return;
+    }
+    setIsRunningCode(true);
+    setExecutionOutput(null);
+    setExecutionError(null);
+    setGradingResult(null); // Clear previous AI grading results
+
+    // Simulate async operation for UI feedback
+    await new Promise(resolve => setTimeout(resolve, 300)); 
+
+    try {
+      const capturedLogs: string[] = [];
+      const originalConsoleLog = console.log;
+      
+      // Temporarily override console.log to capture outputs
+      console.log = (...args: any[]) => {
+        capturedLogs.push(args.map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' '));
+        originalConsoleLog.apply(console, args); // Also log to actual console for debugging
+      };
+
+      // eslint-disable-next-line no-new-func
+      const scriptFunction = new Function(code);
+      const returnValue = scriptFunction();
+      
+      console.log = originalConsoleLog; // Restore original console.log
+
+      let outputString = capturedLogs.join('\n');
+      if (returnValue !== undefined) {
+        const returnValueString = typeof returnValue === 'object' ? JSON.stringify(returnValue, null, 2) : String(returnValue);
+        outputString += (outputString ? '\n' : '') + `Return Value: ${returnValueString}`;
+      }
+      
+      setExecutionOutput(outputString || "Code executed successfully (no explicit output or return value).");
+
+    } catch (err: any) {
+      console.log = window.console.log; // Restore original console.log in case of error
+      console.error("Error running code:", err);
+      setExecutionError(err.message || "An unknown error occurred during execution.");
+    } finally {
+      setIsRunningCode(false);
+    }
+  };
+
+
   const handleRestartChallenge = () => {
     if (initialTopic && initialDifficulty && initialPreference) {
       fetchQuestionForChallenge(initialTopic, initialDifficulty, initialPreference);
@@ -386,8 +437,9 @@ function ChallengePageContent() {
     setActiveDisplayType(newType);
   };
   
-  const isInputDisabled = !initialTopic?.trim() || !currentDisplayedQuestion || isLoadingQuestion || isSubmittingChallenge || isLoadingSolution;
-  const isSelectorDisabled = isLoadingQuestion || isSubmittingChallenge || isLoadingSolution;
+  const isInputDisabled = !initialTopic?.trim() || !currentDisplayedQuestion || isLoadingQuestion || isSubmittingChallenge || isLoadingSolution || isRunningCode;
+  const isSelectorDisabled = isLoadingQuestion || isSubmittingChallenge || isLoadingSolution || isRunningCode;
+
 
   if (authLoading || !user) {
     return (
@@ -498,13 +550,17 @@ function ChallengePageContent() {
           <div className="space-y-8">
             {activeDisplayType === "coding" && challengeData && (challengeData.codingQuestion || isLoadingQuestion) && (
               <section aria-labelledby="editor-heading">
-                <h2 id="editor-heading" className="sr-only">Code Editor</h2>
+                <h2 id="editor-heading" className="sr-only">Code Editor and Execution</h2>
                 <CodeEditorPanel
                   code={code}
                   onCodeChange={setCode}
-                  onSubmit={handleSubmitChallenge}
+                  onSubmit={handleSubmitChallenge} // Submits for AI Grade
+                  onRunCode={handleRunCode} // Runs code client-side
                   isSubmitting={isSubmittingChallenge}
+                  isRunningCode={isRunningCode}
                   disabled={isInputDisabled || !challengeData?.codingQuestion}
+                  executionOutput={executionOutput}
+                  executionError={executionError}
                 />
               </section>
             )}
@@ -522,7 +578,7 @@ function ChallengePageContent() {
               </section>
             )}
             
-            {activeDisplayType && challengeData && (currentDisplayedQuestion || isLoadingQuestion) && (
+            {(activeDisplayType && challengeData && (currentDisplayedQuestion || isLoadingQuestion)) && (gradingResult || isSubmittingChallenge || isLoadingSolution) && (
               <section aria-labelledby="feedback-heading">
                 <h2 id="feedback-heading" className="sr-only">Grading Feedback</h2>
                 <GradingResults
@@ -565,3 +621,4 @@ export default function ChallengePage() {
     </Suspense>
   )
 }
+
