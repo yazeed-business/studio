@@ -24,7 +24,7 @@ export type GradeCodeInput = z.infer<typeof GradeCodeInputSchema>;
 const GradeCodeOutputSchema = z.object({
   score: z.number().describe('The score of the code, out of 100.'),
   feedback: z.string().describe('Constructive feedback on the code.'),
-  passed: z.boolean().describe('Whether the code passed or failed.'),
+  passed: z.boolean().describe('Whether the code passed or failed, above 60 is passed.'),
 });
 export type GradeCodeOutput = z.infer<typeof GradeCodeOutputSchema>;
 
@@ -51,7 +51,7 @@ Code:
 \`\`\`
 {% endif %}
 
-Provide a score out of 100, feedback, and a pass/fail status.
+Provide a score out of 100, feedback, and a pass/fail status, pass is above 60.
 Ensure the feedback is constructive and helps the user improve their coding skills.
 
 Consider edge cases, error handling, and overall code quality.
